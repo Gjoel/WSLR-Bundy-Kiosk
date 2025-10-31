@@ -636,6 +636,7 @@
         let autoClockOutEnabled = true;
         let autoClockOutTime = "23:59";
         let lastAutoClockOutDate = null;
+        let realtimeSubscriptions = null;
         
         // DOM Elements
         const dateTimeElement = document.getElementById('dateTime');
@@ -691,6 +692,11 @@
             // Set up auto clock-out check
             setInterval(checkAutoClockOut, 60000);
             checkAutoClockOut();
+            
+            // Subscribe to real-time updates
+            setTimeout(() => {
+                subscribeToRealtimeUpdates();
+            }, 2000);
             
             // Set default dates for export
             const today = new Date();
@@ -751,6 +757,50 @@
             }
         }
         
+        // Subscribe to real-time changes
+        function subscribeToRealtimeUpdates() {
+            if (!supabase) return;
+            
+            console.log('Setting up real-time subscriptions...');
+            
+            // Subscribe to employees table changes
+            const employeesSubscription = supabase
+                .channel('employees-changes')
+                .on('postgres_changes', 
+                    { event: '*', schema: 'public', table: 'employees' },
+                    (payload) => {
+                        console.log('Employees change received!', payload);
+                        // Reload data from Supabase
+                        syncDataWithSupabase();
+                    }
+                )
+                .subscribe((status) => {
+                    if (status === 'SUBSCRIBED') {
+                        console.log('Real-time employees subscription active');
+                    }
+                });
+            
+            // Subscribe to clock_events table changes  
+            const eventsSubscription = supabase
+                .channel('events-changes')
+                .on('postgres_changes',
+                    { event: '*', schema: 'public', table: 'clock_events' },
+                    (payload) => {
+                        console.log('Clock events change received!', payload);
+                        // Reload data from Supabase
+                        syncDataWithSupabase();
+                    }
+                )
+                .subscribe((status) => {
+                    if (status === 'SUBSCRIBED') {
+                        console.log('Real-time events subscription active');
+                    }
+                });
+                
+            realtimeSubscriptions = { employeesSubscription, eventsSubscription };
+            return realtimeSubscriptions;
+        }
+        
         // Save Supabase settings
         function saveSupabaseSettings() {
             const url = supabaseUrlInput.value.trim();
@@ -765,6 +815,21 @@
             localStorage.setItem('bundyClockSupabaseKey', key);
             
             initSupabase();
+            
+            // Restart real-time subscriptions
+            if (realtimeSubscriptions) {
+                if (realtimeSubscriptions.employeesSubscription) {
+                    supabase.removeChannel(realtimeSubscriptions.employeesSubscription);
+                }
+                if (realtimeSubscriptions.eventsSubscription) {
+                    supabase.removeChannel(realtimeSubscriptions.eventsSubscription);
+                }
+            }
+            
+            setTimeout(() => {
+                subscribeToRealtimeUpdates();
+            }, 1000);
+            
             showNotification('Supabase settings saved successfully', 'success');
         }
         
@@ -772,10 +837,12 @@
         async function syncDataWithSupabase() {
             if (!supabase) {
                 showNotification('Supabase not configured', 'error');
-                return;
+                return false;
             }
             
             try {
+                showNotification('Syncing data with Supabase...', 'success');
+                
                 // First, try to get existing data from Supabase
                 let supabaseEmployees = [];
                 let supabaseEvents = [];
@@ -825,7 +892,7 @@
                 } catch (tableError) {
                     console.error('Table creation error:', tableError);
                     showNotification('Error creating tables in Supabase. Please check if tables exist.', 'error');
-                    return;
+                    return false;
                 }
                 
                 // Merge data (Supabase takes precedence for existing records)
@@ -843,9 +910,11 @@
                 renderEmployeeList(searchInput.value);
                 renderAdminEmployeeList();
                 showNotification('Data synced successfully with Supabase', 'success');
+                return true;
             } catch (error) {
                 console.error('Error syncing with Supabase:', error);
                 showNotification('Error syncing with Supabase: ' + error.message, 'error');
+                return false;
             }
         }
 
@@ -882,9 +951,9 @@
             return merged;
         }
         
-        // Save to Supabase with automatic retry and table creation
+        // Save to Supabase with proper error propagation
         async function saveToSupabase(table, data) {
-            if (!supabase) return;
+            if (!supabase) return true; // Return true if no Supabase configured
             
             try {
                 // First try to upsert the data
@@ -905,73 +974,45 @@
                         throw error;
                     }
                 }
+                return true; // Success
             } catch (error) {
                 console.error(`Error saving to ${table}:`, error);
-                // Don't show notification here to avoid spam during auto-saves
+                throw error; // Re-throw to let caller handle
             }
-        }
-        
-        // Load data from localStorage
-        function loadData() {
-            // Load employees
-            const storedEmployees = localStorage.getItem('bundyClockEmployees');
-            if (storedEmployees) {
-                employees = JSON.parse(storedEmployees);
-            } else {
-                // Default employees if none exist
-                employees = [
-                    { id: 1, name: 'Abbie Walsh', active: true },
-                    { id: 2, name: 'Ajser Murati', active: true },
-                    { id: 3, name: 'Anjolique Bourgeois', active: true },
-                    { id: 4, name: 'Ashley Hilder', active: true },
-                    { id: 5, name: 'Alison Platt', active: true },
-                    { id: 6, name: 'Amber Hewett', active: true },
-                    { id: 7, name: 'Bella Morgan', active: true },
-                    { id: 8, name: 'Bernard Stewart', active: true }
-                ];
-                saveEmployees();
-            }
-            
-            // Load clock events
-            const storedEvents = localStorage.getItem('bundyClockEvents');
-            if (storedEvents) {
-                clockEvents = JSON.parse(storedEvents);
-            }
-            
-            // Load admin PIN
-            const storedPin = localStorage.getItem('bundyClockPin');
-            if (storedPin) {
-                adminPin = storedPin;
-            }
-            
-            // Load auto clock-out settings
-            const storedAutoClockOut = localStorage.getItem('bundyClockAutoClockOut');
-            if (storedAutoClockOut) {
-                const autoClockOutSettings = JSON.parse(storedAutoClockOut);
-                autoClockOutEnabled = autoClockOutSettings.enabled;
-                autoClockOutTime = autoClockOutSettings.time;
-                enableAutoClockOut.checked = autoClockOutEnabled;
-                autoClockOutTimeInput.value = autoClockOutTime;
-            }
-            
-            // Load last auto clock-out date
-            lastAutoClockOutDate = localStorage.getItem('bundyClockLastAutoClockOut');
         }
         
         // Save employees to localStorage AND Supabase (INSTANT SYNC)
         async function saveEmployees() {
             localStorage.setItem('bundyClockEmployees', JSON.stringify(employees));
             if (supabase) {
-                await saveToSupabase('employees', employees);
+                try {
+                    await saveToSupabase('employees', employees);
+                    console.log('Employees synced to Supabase successfully');
+                    return true;
+                } catch (error) {
+                    console.error('Failed to sync employees to Supabase:', error);
+                    showNotification('Warning: Employees saved locally but failed to sync to cloud', 'error');
+                    return false;
+                }
             }
+            return true;
         }
         
         // Save clock events to localStorage AND Supabase (INSTANT SYNC)
         async function saveClockEvents() {
             localStorage.setItem('bundyClockEvents', JSON.stringify(clockEvents));
             if (supabase) {
-                await saveToSupabase('clock_events', clockEvents);
+                try {
+                    await saveToSupabase('clock_events', clockEvents);
+                    console.log('Clock events synced to Supabase successfully');
+                    return true;
+                } catch (error) {
+                    console.error('Failed to sync clock events to Supabase:', error);
+                    showNotification('Warning: Time clock saved locally but failed to sync to cloud', 'error');
+                    return false;
+                }
             }
+            return true;
         }
         
         // Save admin PIN to localStorage
@@ -1142,10 +1183,18 @@
             };
             
             clockEvents.push(event);
-            await saveClockEvents(); // Wait for sync to complete
             
-            renderEmployeeList(searchInput.value);
-            showNotification(`${employee.name} clocked ${action} successfully`, 'success');
+            // Save and wait for completion
+            const saveSuccess = await saveClockEvents();
+            
+            if (saveSuccess) {
+                renderEmployeeList(searchInput.value);
+                showNotification(`${employee.name} clocked ${action} successfully`, 'success');
+            } else {
+                // Data is saved locally, but Supabase sync failed
+                renderEmployeeList(searchInput.value);
+                showNotification(`${employee.name} clocked ${action} (local only - sync failed)`, 'error');
+            }
         }
         
         // Handle adding a new employee
@@ -1171,12 +1220,17 @@
                 active: true
             });
             
-            await saveEmployees(); // Wait for sync to complete
+            const saveSuccess = await saveEmployees(); // Wait for sync to complete
+            
             renderEmployeeList(searchInput.value);
             renderAdminEmployeeList();
             newEmployeeName.value = '';
             
-            showNotification('Employee added successfully', 'success');
+            if (saveSuccess) {
+                showNotification('Employee added successfully', 'success');
+            } else {
+                showNotification('Employee added locally but sync failed', 'error');
+            }
         }
         
         // Handle renaming an employee (inline)
@@ -1215,7 +1269,7 @@
             }
             
             employee.name = newName;
-            await saveEmployees();
+            const saveSuccess = await saveEmployees();
             renderEmployeeList(searchInput.value);
             renderAdminEmployeeList();
             
@@ -1227,7 +1281,11 @@
             });
             await saveClockEvents();
             
-            showNotification('Employee renamed successfully', 'success');
+            if (saveSuccess) {
+                showNotification('Employee renamed successfully', 'success');
+            } else {
+                showNotification('Employee renamed locally but sync failed', 'error');
+            }
         }
         
         // Handle canceling inline edit
@@ -1249,11 +1307,15 @@
             if (!employee) return;
             
             employee.active = !employee.active;
-            await saveEmployees();
+            const saveSuccess = await saveEmployees();
             renderEmployeeList(searchInput.value);
             renderAdminEmployeeList();
             
-            showNotification(`Employee ${employee.active ? 'activated' : 'deactivated'} successfully`, 'success');
+            if (saveSuccess) {
+                showNotification(`Employee ${employee.active ? 'activated' : 'deactivated'} successfully`, 'success');
+            } else {
+                showNotification(`Employee ${employee.active ? 'activated' : 'deactivated'} locally but sync failed`, 'error');
+            }
         }
         
         // Handle deleting an employee
@@ -1265,11 +1327,15 @@
             }
             
             employees = employees.filter(emp => emp.id !== employeeId);
-            await saveEmployees();
+            const saveSuccess = await saveEmployees();
             renderEmployeeList(searchInput.value);
             renderAdminEmployeeList();
             
-            showNotification('Employee deleted successfully', 'success');
+            if (saveSuccess) {
+                showNotification('Employee deleted successfully', 'success');
+            } else {
+                showNotification('Employee deleted locally but sync failed', 'error');
+            }
         }
         
         // Handle exporting CSV
