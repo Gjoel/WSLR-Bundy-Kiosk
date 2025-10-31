@@ -935,55 +935,29 @@ FOR ALL USING (true);
             try {
                 showNotification('Syncing data with Supabase...', 'success');
                 
-                // First, try to get existing data from Supabase
-                let supabaseEmployees = [];
-                let supabaseEvents = [];
+                // Get data from Supabase
+                const { data: supabaseEmployees, error: employeesError } = await supabase
+                    .from('employees')
+                    .select('*');
                 
-                try {
-                    const { data: employeesData, error: employeesError } = await supabase
-                        .from('employees')
-                        .select('*');
-                    
-                    if (employeesError) {
-                        if (employeesError.message.includes('does not exist')) {
-                            showNotification('Employees table not found in Supabase', 'error');
-                            return false;
-                        } else {
-                            throw employeesError;
-                        }
-                    } else {
-                        supabaseEmployees = employeesData || [];
-                    }
-                    
-                    const { data: eventsData, error: eventsError } = await supabase
-                        .from('clock_events')
-                        .select('*');
-                    
-                    if (eventsError) {
-                        if (eventsError.message.includes('does not exist')) {
-                            showNotification('Clock events table not found in Supabase', 'error');
-                            return false;
-                        } else {
-                            throw eventsError;
-                        }
-                    } else {
-                        supabaseEvents = eventsData || [];
-                    }
-                } catch (tableError) {
-                    console.error('Table error:', tableError);
-                    showNotification('Database tables not found. Please create tables first.', 'error');
+                const { data: supabaseEvents, error: eventsError } = await supabase
+                    .from('clock_events')
+                    .select('*');
+                
+                if (employeesError || eventsError) {
+                    showNotification('Error connecting to Supabase tables', 'error');
                     return false;
                 }
                 
-                // Merge data (Supabase takes precedence for existing records)
-                const mergedEmployees = mergeEmployees(employees, supabaseEmployees);
-                const mergedEvents = mergeEvents(clockEvents, supabaseEvents);
+                // Merge data
+                const mergedEmployees = mergeEmployees(employees, supabaseEmployees || []);
+                const mergedEvents = mergeEvents(clockEvents, supabaseEvents || []);
                 
-                // Update local state with merged data
+                // Update local state
                 employees = mergedEmployees;
                 clockEvents = mergedEvents;
                 
-                // Save merged data back to localStorage and Supabase
+                // Save back
                 await saveEmployees();
                 await saveClockEvents();
                 
@@ -993,7 +967,7 @@ FOR ALL USING (true);
                 return true;
             } catch (error) {
                 console.error('Error syncing with Supabase:', error);
-                showNotification('Error syncing with Supabase: ' + error.message, 'error');
+                showNotification('Error syncing with Supabase', 'error');
                 return false;
             }
         }
@@ -1036,22 +1010,18 @@ FOR ALL USING (true);
             if (!supabase) return true;
             
             try {
-                // First try to upsert the data
                 const { error } = await supabase
                     .from(table)
                     .upsert(data);
                 
                 if (error) {
-                    if (error.message.includes('does not exist')) {
-                        throw new Error(`Table ${table} does not exist in Supabase`);
-                    } else {
-                        throw error;
-                    }
+                    console.error(`Error saving to ${table}:`, error);
+                    return false;
                 }
                 return true;
             } catch (error) {
                 console.error(`Error saving to ${table}:`, error);
-                throw error;
+                return false;
             }
         }
         
