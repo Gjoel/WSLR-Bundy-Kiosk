@@ -1,0 +1,1631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bundy Clock Kiosk</title>
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --secondary-color: #3498db;
+            --success-color: #27ae60;
+            --danger-color: #e74c3c;
+            --light-gray: #f5f5f5;
+            --dark-gray: #7f8c8d;
+            --white: #ffffff;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background-color: var(--light-gray);
+            color: var(--primary-color);
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            font-size: 18px;
+        }
+        
+        .container {
+            background-color: var(--white);
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            position: relative;
+        }
+        
+        header {
+            background-color: var(--primary-color);
+            color: var(--white);
+            padding: 20px;
+            text-align: center;
+            position: relative;
+        }
+        
+        h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+        
+        .date-time {
+            font-size: 22px;
+            opacity: 0.9;
+            font-weight: 600;
+        }
+        
+        .admin-header-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background-color: var(--secondary-color);
+            color: var(--white);
+            border: none;
+            border-radius: 6px;
+            padding: 12px 24px;
+            font-size: 20px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .admin-header-btn:hover {
+            background-color: #2980b9;
+        }
+        
+        .search-container {
+            padding: 20px;
+            background-color: var(--light-gray);
+        }
+        
+        #searchInput {
+            width: 100%;
+            padding: 18px;
+            font-size: 22px;
+            border: 2px solid var(--dark-gray);
+            border-radius: 8px;
+            outline: none;
+            font-weight: 600;
+        }
+        
+        #searchInput:focus {
+            border-color: var(--secondary-color);
+        }
+        
+        .employee-list {
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+        }
+        
+        @media (min-width: 768px) {
+            .employee-list {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+        
+        .employee-card {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 18px;
+            border: 1px solid var(--light-gray);
+            border-radius: 8px;
+            background-color: var(--white);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            min-height: 90px;
+        }
+        
+        .employee-info {
+            flex: 1;
+            padding-right: 15px;
+        }
+        
+        .employee-name {
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        
+        .employee-status {
+            font-size: 18px;
+            color: var(--dark-gray);
+            font-weight: 600;
+        }
+        
+        .clock-btn {
+            padding: 18px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 22px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-width: 160px;
+            min-height: 70px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .clock-in {
+            background-color: var(--success-color);
+            color: var(--white);
+        }
+        
+        .clock-out {
+            background-color: var(--danger-color);
+            color: var(--white);
+        }
+        
+        .clock-btn:hover {
+            opacity: 0.9;
+            transform: translateY(-2px);
+        }
+        
+        .clock-btn:active {
+            transform: translateY(0);
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .modal-content {
+            background-color: var(--white);
+            border-radius: 10px;
+            width: 100%;
+            max-width: 1000px;
+            max-height: 90vh;
+            padding: 30px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            overflow-y: auto;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .modal-title {
+            font-size: 28px;
+            font-weight: 700;
+        }
+        
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            color: var(--dark-gray);
+            font-weight: 700;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 700;
+            font-size: 20px;
+        }
+        
+        input[type="text"],
+        input[type="password"],
+        input[type="date"],
+        select {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid var(--light-gray);
+            border-radius: 6px;
+            font-size: 20px;
+            outline: none;
+            font-weight: 600;
+        }
+        
+        input[type="text"]:focus,
+        input[type="password"]:focus,
+        input[type="date"]:focus,
+        select:focus {
+            border-color: var(--secondary-color);
+        }
+        
+        .btn {
+            padding: 15px 25px;
+            border: none;
+            border-radius: 6px;
+            font-size: 20px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary {
+            background-color: var(--secondary-color);
+            color: var(--white);
+        }
+        
+        .btn-secondary {
+            background-color: var(--dark-gray);
+            color: var(--white);
+        }
+        
+        .btn-success {
+            background-color: var(--success-color);
+            color: var(--white);
+        }
+        
+        .btn-danger {
+            background-color: var(--danger-color);
+            color: var(--white);
+        }
+        
+        .btn:hover {
+            opacity: 0.9;
+        }
+        
+        .admin-section {
+            margin-bottom: 40px;
+            padding: 20px;
+            border: 1px solid var(--light-gray);
+            border-radius: 8px;
+        }
+        
+        .admin-section h2 {
+            font-size: 26px;
+            margin-bottom: 20px;
+            font-weight: 700;
+            color: var(--primary-color);
+            border-bottom: 2px solid var(--secondary-color);
+            padding-bottom: 10px;
+        }
+        
+        .employee-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        
+        .employee-table th,
+        .employee-table td {
+            padding: 15px 18px;
+            text-align: left;
+            border-bottom: 1px solid var(--light-gray);
+            font-size: 20px;
+        }
+        
+        .employee-table th {
+            background-color: var(--light-gray);
+            font-weight: 700;
+        }
+        
+        .action-btn {
+            padding: 8px 15px;
+            margin-right: 5px;
+            border: none;
+            border-radius: 4px;
+            font-size: 18px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        
+        .status-active {
+            color: var(--success-color);
+            font-weight: 700;
+        }
+        
+        .status-inactive {
+            color: var(--danger-color);
+            font-weight: 700;
+        }
+        
+        .notification {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 20px 30px;
+            border-radius: 6px;
+            color: var(--white);
+            font-weight: 700;
+            z-index: 1001;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            font-size: 20px;
+        }
+        
+        .notification.show {
+            opacity: 1;
+        }
+        
+        .notification.success {
+            background-color: var(--success-color);
+        }
+        
+        .notification.error {
+            background-color: var(--danger-color);
+        }
+        
+        .admin-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .admin-controls .btn {
+            flex: 1;
+            min-width: 150px;
+        }
+        
+        .auto-clockout-section {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: var(--light-gray);
+            border-radius: 8px;
+        }
+        
+        .inline-edit {
+            display: none;
+            margin-top: 10px;
+        }
+        
+        .inline-edit input {
+            font-size: 20px;
+            padding: 10px;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        
+        @media (max-width: 600px) {
+            body {
+                padding: 10px;
+                font-size: 16px;
+            }
+            
+            h1 {
+                font-size: 26px;
+            }
+            
+            .employee-name {
+                font-size: 18px;
+            }
+            
+            .clock-btn {
+                padding: 15px 20px;
+                font-size: 18px;
+                min-width: 120px;
+                min-height: 60px;
+            }
+            
+            .employee-table {
+                font-size: 16px;
+            }
+            
+            .employee-table th,
+            .employee-table td {
+                font-size: 16px;
+                padding: 10px 12px;
+            }
+            
+            .action-btn {
+                padding: 6px 10px;
+                font-size: 14px;
+            }
+            
+            .admin-header-btn {
+                position: relative;
+                top: auto;
+                right: auto;
+                margin-top: 10px;
+                width: 100%;
+            }
+            
+            .btn {
+                font-size: 16px;
+                padding: 12px 20px;
+            }
+            
+            .modal-title {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="kioskView">
+        <header>
+            <h1>Bundy Clock – Kiosk</h1>
+            <div class="date-time" id="dateTime">Loading...</div>
+            <button class="admin-header-btn" id="adminBtn">Admin</button>
+        </header>
+        
+        <div class="search-container">
+            <input type="text" id="searchInput" placeholder="Search your name...">
+        </div>
+        
+        <div class="employee-list" id="employeeList">
+            <!-- Employee list will be populated here -->
+        </div>
+    </div>
+    
+    <!-- Admin View (hidden by default) -->
+    <div class="container" id="adminView" style="display: none;">
+        <header>
+            <h1>Bundy Clock – Admin Panel</h1>
+            <div class="date-time" id="adminDateTime">Loading...</div>
+            <button class="admin-header-btn" id="backToKioskBtn">Back to Kiosk</button>
+        </header>
+        
+        <div style="padding: 20px;">
+            <!-- Employees Section -->
+            <div class="admin-section">
+                <h2>Employee Management</h2>
+                <div class="admin-controls">
+                    <div class="form-group" style="flex: 2;">
+                        <input type="text" id="newEmployeeName" placeholder="Enter employee name">
+                    </div>
+                    <button class="btn btn-primary" id="addEmployeeBtn">Add Employee</button>
+                    <button class="btn btn-secondary" id="importCsvBtn">Import CSV</button>
+                </div>
+                
+                <table class="employee-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Status</th>
+                            <th>Last Clock</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="adminEmployeeList">
+                        <!-- Admin employee list will be populated here -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Export Section -->
+            <div class="admin-section">
+                <h2>Export Timesheet</h2>
+                <div class="form-group">
+                    <label for="startDate">Start Date</label>
+                    <input type="date" id="startDate">
+                </div>
+                <div class="form-group">
+                    <label for="endDate">End Date</label>
+                    <input type="date" id="endDate">
+                </div>
+                
+                <button class="btn btn-success" id="exportCsvBtn">Download CSV</button>
+            </div>
+            
+            <!-- Settings Section -->
+            <div class="admin-section">
+                <h2>Settings</h2>
+                <div class="form-group">
+                    <label for="newPin">New PIN</label>
+                    <input type="password" id="newPin" placeholder="Enter new PIN">
+                </div>
+                <div class="form-group">
+                    <label for="confirmPin">Confirm PIN</label>
+                    <input type="password" id="confirmPin" placeholder="Confirm new PIN">
+                </div>
+                <button class="btn btn-primary" id="updatePinBtn">Update PIN</button>
+                
+                <div class="auto-clockout-section">
+                    <h3>Automatic Clock-Out</h3>
+                    <p>Automatically clock out all employees at midnight each night.</p>
+                    <div class="form-group">
+                        <label for="autoClockOutTime">Auto Clock-Out Time</label>
+                        <input type="time" id="autoClockOutTime" value="23:59">
+                    </div>
+                    <div class="form-group">
+                        <label for="enableAutoClockOut">
+                            <input type="checkbox" id="enableAutoClockOut" checked>
+                            Enable Automatic Clock-Out
+                        </label>
+                    </div>
+                    <button class="btn btn-secondary" id="saveAutoClockOutBtn">Save Settings</button>
+                    <button class="btn btn-danger" id="manualClockOutBtn">Clock Out Everyone Now</button>
+                </div>
+                
+                <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--light-gray);">
+                    <h3>Supabase Settings</h3>
+                    <div class="form-group">
+                        <label for="supabaseUrl">Supabase URL</label>
+                        <input type="text" id="supabaseUrl" placeholder="https://your-project.supabase.co">
+                    </div>
+                    <div class="form-group">
+                        <label for="supabaseKey">Supabase Anon Key</label>
+                        <input type="text" id="supabaseKey" placeholder="Your anon key">
+                    </div>
+                    <button class="btn btn-primary" id="saveSupabaseBtn">Save Supabase Settings</button>
+                    <button class="btn btn-secondary" id="syncDataBtn" style="margin-top: 10px;">Sync Data with Supabase</button>
+                </div>
+            </div>
+            
+            <!-- Reports Section -->
+            <div class="admin-section">
+                <h2>Employee Activity Report</h2>
+                <div class="form-group">
+                    <label for="reportEmployee">Select Employee</label>
+                    <select id="reportEmployee">
+                        <option value="">All Employees</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="reportStartDate">Start Date</label>
+                    <input type="date" id="reportStartDate">
+                </div>
+                <div class="form-group">
+                    <label for="reportEndDate">End Date</label>
+                    <input type="date" id="reportEndDate">
+                </div>
+                <button class="btn btn-primary" id="generateReportBtn">Generate Report</button>
+                
+                <div id="reportResults" style="margin-top: 20px;"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Admin Login Modal -->
+    <div class="modal" id="loginModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Admin Login</h2>
+                <button class="close-btn" id="closeLoginModal">&times;</button>
+            </div>
+            <p style="font-size: 20px; font-weight: 600; margin-bottom: 20px;">Enter admin PIN to manage employees and export data.</p>
+            <div class="form-group">
+                <label for="pinInput">PIN</label>
+                <input type="password" id="pinInput" placeholder="Enter">
+            </div>
+            <button class="btn btn-primary" id="loginBtn">Login</button>
+        </div>
+    </div>
+    
+    <!-- Notification -->
+    <div class="notification" id="notification"></div>
+
+    <!-- Import CSV Modal -->
+    <div class="modal" id="importCsvModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Import CSV</h2>
+                <button class="close-btn" id="closeImportCsvModal">&times;</button>
+            </div>
+            <p style="font-size: 20px; font-weight: 600;">Upload a CSV file with employee names. The CSV should have a header row with a "name" column.</p>
+            <div class="form-group">
+                <input type="file" id="csvFile" accept=".csv">
+            </div>
+            <button class="btn btn-primary" id="processCsvBtn">Process CSV</button>
+        </div>
+    </div>
+
+    <!-- Include Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <script>
+        // Initialize state
+        let employees = [];
+        let clockEvents = [];
+        let adminPin = "1234"; // Default PIN
+        let isAdmin = false;
+        let currentView = 'kiosk';
+        let supabase = null;
+        let autoClockOutEnabled = true;
+        let autoClockOutTime = "23:59";
+        let lastAutoClockOutDate = null;
+        
+        // DOM Elements
+        const dateTimeElement = document.getElementById('dateTime');
+        const adminDateTimeElement = document.getElementById('adminDateTime');
+        const searchInput = document.getElementById('searchInput');
+        const employeeList = document.getElementById('employeeList');
+        const adminBtn = document.getElementById('adminBtn');
+        const backToKioskBtn = document.getElementById('backToKioskBtn');
+        const kioskView = document.getElementById('kioskView');
+        const adminView = document.getElementById('adminView');
+        const loginModal = document.getElementById('loginModal');
+        const closeLoginModal = document.getElementById('closeLoginModal');
+        const pinInput = document.getElementById('pinInput');
+        const loginBtn = document.getElementById('loginBtn');
+        const newEmployeeName = document.getElementById('newEmployeeName');
+        const addEmployeeBtn = document.getElementById('addEmployeeBtn');
+        const adminEmployeeList = document.getElementById('adminEmployeeList');
+        const startDate = document.getElementById('startDate');
+        const endDate = document.getElementById('endDate');
+        const exportCsvBtn = document.getElementById('exportCsvBtn');
+        const newPin = document.getElementById('newPin');
+        const confirmPin = document.getElementById('confirmPin');
+        const updatePinBtn = document.getElementById('updatePinBtn');
+        const notification = document.getElementById('notification');
+        const importCsvBtn = document.getElementById('importCsvBtn');
+        const importCsvModal = document.getElementById('importCsvModal');
+        const closeImportCsvModal = document.getElementById('closeImportCsvModal');
+        const csvFile = document.getElementById('csvFile');
+        const processCsvBtn = document.getElementById('processCsvBtn');
+        const supabaseUrlInput = document.getElementById('supabaseUrl');
+        const supabaseKeyInput = document.getElementById('supabaseKey');
+        const saveSupabaseBtn = document.getElementById('saveSupabaseBtn');
+        const syncDataBtn = document.getElementById('syncDataBtn');
+        const enableAutoClockOut = document.getElementById('enableAutoClockOut');
+        const autoClockOutTimeInput = document.getElementById('autoClockOutTime');
+        const saveAutoClockOutBtn = document.getElementById('saveAutoClockOutBtn');
+        const manualClockOutBtn = document.getElementById('manualClockOutBtn');
+        const reportEmployee = document.getElementById('reportEmployee');
+        const reportStartDate = document.getElementById('reportStartDate');
+        const reportEndDate = document.getElementById('reportEndDate');
+        const generateReportBtn = document.getElementById('generateReportBtn');
+        const reportResults = document.getElementById('reportResults');
+        
+        // Initialize the app
+        function init() {
+            loadData();
+            initSupabase();
+            updateDateTime();
+            setInterval(updateDateTime, 1000);
+            renderEmployeeList();
+            setupEventListeners();
+            
+            // Set up auto clock-out check
+            setInterval(checkAutoClockOut, 60000); // Check every minute
+            checkAutoClockOut(); // Check immediately on load
+            
+            // Set default dates for export
+            const today = new Date();
+            const oneWeekAgo = new Date(today);
+            oneWeekAgo.setDate(today.getDate() - 7);
+            
+            startDate.valueAsDate = oneWeekAgo;
+            endDate.valueAsDate = today;
+            reportStartDate.valueAsDate = oneWeekAgo;
+            reportEndDate.valueAsDate = today;
+        }
+        
+        // Initialize Supabase client
+        function initSupabase() {
+            const supabaseUrl = localStorage.getItem('bundyClockSupabaseUrl') || 'https://iuatauioipccjmptiyrg.supabase.co';
+            const supabaseKey = localStorage.getItem('bundyClockSupabaseKey') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml1YXRhdWlvaXBjY2ptcHRpeXJnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE4NzE2NjQsImV4cCI6MjA3NzQ0NzY2NH0.rE3-oi9cgorFhGPHnZYWtjxKAnjCDBzGSuHZJ3dlglw';
+            
+            supabaseUrlInput.value = supabaseUrl;
+            supabaseKeyInput.value = supabaseKey;
+            
+            if (supabaseUrl && supabaseKey) {
+                supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+                console.log('Supabase client initialized');
+            }
+        }
+        
+        // Save Supabase settings
+        function saveSupabaseSettings() {
+            const url = supabaseUrlInput.value.trim();
+            const key = supabaseKeyInput.value.trim();
+            
+            if (!url || !key) {
+                showNotification('Please enter both Supabase URL and Key', 'error');
+                return;
+            }
+            
+            localStorage.setItem('bundyClockSupabaseUrl', url);
+            localStorage.setItem('bundyClockSupabaseKey', key);
+            
+            initSupabase();
+            showNotification('Supabase settings saved successfully', 'success');
+        }
+        
+        // Sync data with Supabase
+        async function syncDataWithSupabase() {
+            if (!supabase) {
+                showNotification('Supabase not configured', 'error');
+                return;
+            }
+            
+            try {
+                // Sync employees
+                const { data: supabaseEmployees, error: employeesError } = await supabase
+                    .from('employees')
+                    .select('*');
+                
+                if (employeesError) throw employeesError;
+                
+                // Merge employees (Supabase takes precedence)
+                if (supabaseEmployees && supabaseEmployees.length > 0) {
+                    employees = supabaseEmployees;
+                    saveEmployees();
+                } else {
+                    // If no employees in Supabase, push our local employees
+                    const { error: insertError } = await supabase
+                        .from('employees')
+                        .upsert(employees);
+                    
+                    if (insertError) throw insertError;
+                }
+                
+                // Sync clock events
+                const { data: supabaseEvents, error: eventsError } = await supabase
+                    .from('clock_events')
+                    .select('*');
+                
+                if (eventsError) throw eventsError;
+                
+                // Merge events (Supabase takes precedence)
+                if (supabaseEvents && supabaseEvents.length > 0) {
+                    clockEvents = supabaseEvents;
+                    saveClockEvents();
+                } else {
+                    // If no events in Supabase, push our local events
+                    const { error: insertError } = await supabase
+                        .from('clock_events')
+                        .upsert(clockEvents);
+                    
+                    if (insertError) throw insertError;
+                }
+                
+                renderEmployeeList(searchInput.value);
+                renderAdminEmployeeList();
+                showNotification('Data synced successfully with Supabase', 'success');
+            } catch (error) {
+                console.error('Error syncing with Supabase:', error);
+                showNotification('Error syncing with Supabase: ' + error.message, 'error');
+            }
+        }
+        
+        // Save to Supabase
+        async function saveToSupabase(table, data) {
+            if (!supabase) return;
+            
+            try {
+                const { error } = await supabase
+                    .from(table)
+                    .upsert(data);
+                
+                if (error) throw error;
+            } catch (error) {
+                console.error('Error saving to Supabase:', error);
+            }
+        }
+        
+        // Load data from localStorage
+        function loadData() {
+            // Load employees
+            const storedEmployees = localStorage.getItem('bundyClockEmployees');
+            if (storedEmployees) {
+                employees = JSON.parse(storedEmployees);
+            } else {
+                // Default employees if none exist
+                employees = [
+                    { id: 1, name: 'Abbie Walsh', active: true },
+                    { id: 2, name: 'Ajser Murati', active: true },
+                    { id: 3, name: 'Anjolique Bourgeois', active: true },
+                    { id: 4, name: 'Ashley Hilder', active: true },
+                    { id: 5, name: 'Alison Platt', active: true },
+                    { id: 6, name: 'Amber Hewett', active: true },
+                    { id: 7, name: 'Bella Morgan', active: true },
+                    { id: 8, name: 'Bernard Stewart', active: true }
+                ];
+                saveEmployees();
+            }
+            
+            // Load clock events
+            const storedEvents = localStorage.getItem('bundyClockEvents');
+            if (storedEvents) {
+                clockEvents = JSON.parse(storedEvents);
+            }
+            
+            // Load admin PIN
+            const storedPin = localStorage.getItem('bundyClockPin');
+            if (storedPin) {
+                adminPin = storedPin;
+            }
+            
+            // Load auto clock-out settings
+            const storedAutoClockOut = localStorage.getItem('bundyClockAutoClockOut');
+            if (storedAutoClockOut) {
+                const autoClockOutSettings = JSON.parse(storedAutoClockOut);
+                autoClockOutEnabled = autoClockOutSettings.enabled;
+                autoClockOutTime = autoClockOutSettings.time;
+                enableAutoClockOut.checked = autoClockOutEnabled;
+                autoClockOutTimeInput.value = autoClockOutTime;
+            }
+            
+            // Load last auto clock-out date
+            lastAutoClockOutDate = localStorage.getItem('bundyClockLastAutoClockOut');
+        }
+        
+        // Save employees to localStorage
+        function saveEmployees() {
+            localStorage.setItem('bundyClockEmployees', JSON.stringify(employees));
+            if (supabase) {
+                saveToSupabase('employees', employees);
+            }
+        }
+        
+        // Save clock events to localStorage
+        function saveClockEvents() {
+            localStorage.setItem('bundyClockEvents', JSON.stringify(clockEvents));
+            if (supabase) {
+                saveToSupabase('clock_events', clockEvents);
+            }
+        }
+        
+        // Save admin PIN to localStorage
+        function saveAdminPin() {
+            localStorage.setItem('bundyClockPin', adminPin);
+        }
+        
+        // Save auto clock-out settings
+        function saveAutoClockOutSettings() {
+            const settings = {
+                enabled: enableAutoClockOut.checked,
+                time: autoClockOutTimeInput.value
+            };
+            localStorage.setItem('bundyClockAutoClockOut', JSON.stringify(settings));
+            autoClockOutEnabled = settings.enabled;
+            autoClockOutTime = settings.time;
+            showNotification('Auto clock-out settings saved', 'success');
+        }
+        
+        // Update date and time display
+        function updateDateTime() {
+            const now = new Date();
+            const options = { 
+                month: '2-digit', 
+                day: '2-digit', 
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            };
+            dateTimeElement.textContent = now.toLocaleDateString('en-US', options);
+            adminDateTimeElement.textContent = now.toLocaleDateString('en-US', options);
+        }
+        
+        // Render employee list for kiosk view
+        function renderEmployeeList(filter = '') {
+            employeeList.innerHTML = '';
+            
+            const filteredEmployees = employees.filter(employee => 
+                employee.active && employee.name.toLowerCase().includes(filter.toLowerCase())
+            );
+            
+            if (filteredEmployees.length === 0) {
+                employeeList.innerHTML = '<p style="text-align: center; padding: 20px; grid-column: 1 / -1; font-size: 22px; font-weight: 700;">No employees found</p>';
+                return;
+            }
+            
+            filteredEmployees.forEach(employee => {
+                const employeeCard = document.createElement('div');
+                employeeCard.className = 'employee-card';
+                
+                const lastEvent = getLastEventForEmployee(employee.id);
+                const isClockedIn = lastEvent && lastEvent.action === 'in';
+                
+                employeeCard.innerHTML = `
+                    <div class="employee-info">
+                        <div class="employee-name">${employee.name}</div>
+                        <div class="employee-status">${isClockedIn ? 'Clocked In' : 'Clocked Out'}</div>
+                    </div>
+                    <button class="clock-btn ${isClockedIn ? 'clock-out' : 'clock-in'}" 
+                            data-id="${employee.id}">
+                        ${isClockedIn ? 'Clock Out' : 'Clock In'}
+                    </button>
+                `;
+                
+                employeeList.appendChild(employeeCard);
+            });
+            
+            // Add event listeners to clock buttons
+            document.querySelectorAll('.clock-btn').forEach(button => {
+                button.addEventListener('click', handleClockAction);
+            });
+        }
+        
+        // Render employee list for admin view
+        function renderAdminEmployeeList() {
+            adminEmployeeList.innerHTML = '';
+            
+            // Update report employee dropdown
+            reportEmployee.innerHTML = '<option value="">All Employees</option>';
+            employees.forEach(employee => {
+                reportEmployee.innerHTML += `<option value="${employee.id}">${employee.name}</option>`;
+            });
+            
+            employees.forEach(employee => {
+                const row = document.createElement('tr');
+                const lastEvent = getLastEventForEmployee(employee.id);
+                const lastEventTime = lastEvent ? 
+                    new Date(lastEvent.timestamp_iso).toLocaleString() : 
+                    'No clock events';
+                
+                row.innerHTML = `
+                    <td>
+                        <div class="employee-name-display">${employee.name}</div>
+                        <div class="inline-edit" id="edit-${employee.id}">
+                            <input type="text" id="edit-input-${employee.id}" value="${employee.name}">
+                            <button class="action-btn btn-success save-edit-btn" data-id="${employee.id}">Save</button>
+                            <button class="action-btn btn-secondary cancel-edit-btn" data-id="${employee.id}">Cancel</button>
+                        </div>
+                    </td>
+                    <td class="${employee.active ? 'status-active' : 'status-inactive'}">
+                        ${employee.active ? 'Active' : 'Inactive'}
+                    </td>
+                    <td>${lastEventTime}</td>
+                    <td>
+                        <button class="action-btn btn-primary rename-btn" data-id="${employee.id}">Rename</button>
+                        <button class="action-btn ${employee.active ? 'btn-danger' : 'btn-success'} toggle-btn" data-id="${employee.id}">
+                            ${employee.active ? 'Deactivate' : 'Activate'}
+                        </button>
+                        <button class="action-btn btn-danger delete-btn" data-id="${employee.id}">Delete</button>
+                    </td>
+                `;
+                
+                adminEmployeeList.appendChild(row);
+            });
+            
+            // Add event listeners to action buttons
+            document.querySelectorAll('.rename-btn').forEach(button => {
+                button.addEventListener('click', handleRenameEmployee);
+            });
+            
+            document.querySelectorAll('.toggle-btn').forEach(button => {
+                button.addEventListener('click', handleToggleEmployee);
+            });
+            
+            document.querySelectorAll('.delete-btn').forEach(button => {
+                button.addEventListener('click', handleDeleteEmployee);
+            });
+            
+            // Add event listeners for inline editing
+            document.querySelectorAll('.save-edit-btn').forEach(button => {
+                button.addEventListener('click', handleSaveEdit);
+            });
+            
+            document.querySelectorAll('.cancel-edit-btn').forEach(button => {
+                button.addEventListener('click', handleCancelEdit);
+            });
+        }
+        
+        // Get the last clock event for an employee
+        function getLastEventForEmployee(employeeId) {
+            const employeeEvents = clockEvents
+                .filter(event => event.employee_id === employeeId)
+                .sort((a, b) => new Date(b.timestamp_iso) - new Date(a.timestamp_iso));
+            
+            return employeeEvents.length > 0 ? employeeEvents[0] : null;
+        }
+        
+        // Handle clock in/out action
+        function handleClockAction(e) {
+            const employeeId = parseInt(e.target.getAttribute('data-id'));
+            const employee = employees.find(emp => emp.id === employeeId);
+            
+            if (!employee || !employee.active) {
+                showNotification('Employee not found or inactive', 'error');
+                return;
+            }
+            
+            const lastEvent = getLastEventForEmployee(employeeId);
+            const action = lastEvent && lastEvent.action === 'in' ? 'out' : 'in';
+            const now = new Date();
+            
+            const event = {
+                employee_id: employeeId,
+                employee_name: employee.name,
+                action: action,
+                timestamp_iso: now.toISOString(),
+                timestamp_local: now.toLocaleString()
+            };
+            
+            clockEvents.push(event);
+            saveClockEvents();
+            
+            renderEmployeeList(searchInput.value);
+            showNotification(`${employee.name} clocked ${action} successfully`, 'success');
+        }
+        
+        // Handle adding a new employee
+        function handleAddEmployee() {
+            const name = newEmployeeName.value.trim();
+            
+            if (!name) {
+                showNotification('Please enter a name', 'error');
+                return;
+            }
+            
+            // Check if employee already exists
+            if (employees.some(emp => emp.name.toLowerCase() === name.toLowerCase())) {
+                showNotification('Employee already exists', 'error');
+                return;
+            }
+            
+            const newId = employees.length > 0 ? Math.max(...employees.map(emp => emp.id)) + 1 : 1;
+            
+            employees.push({
+                id: newId,
+                name: name,
+                active: true
+            });
+            
+            saveEmployees();
+            renderEmployeeList(searchInput.value);
+            renderAdminEmployeeList();
+            newEmployeeName.value = '';
+            
+            showNotification('Employee added successfully', 'success');
+        }
+        
+        // Handle renaming an employee (inline)
+        function handleRenameEmployee(e) {
+            const employeeId = parseInt(e.target.getAttribute('data-id'));
+            const displayElement = document.querySelector(`#edit-${employeeId}`).previousElementSibling;
+            const editElement = document.getElementById(`edit-${employeeId}`);
+            
+            // Hide display, show edit
+            displayElement.style.display = 'none';
+            editElement.style.display = 'block';
+            document.getElementById(`edit-input-${employeeId}`).focus();
+        }
+        
+        // Handle saving inline edit
+        function handleSaveEdit(e) {
+            const employeeId = parseInt(e.target.getAttribute('data-id'));
+            const newName = document.getElementById(`edit-input-${employeeId}`).value.trim();
+            const employee = employees.find(emp => emp.id === employeeId);
+            
+            if (!newName) {
+                showNotification('Please enter a name', 'error');
+                return;
+            }
+            
+            if (newName === employee.name) {
+                // No change, just cancel
+                handleCancelEdit(e);
+                return;
+            }
+            
+            // Check if another employee already has this name
+            if (employees.some(emp => emp.id !== employeeId && emp.name.toLowerCase() === newName.toLowerCase())) {
+                showNotification('Employee name already exists', 'error');
+                return;
+            }
+            
+            employee.name = newName;
+            saveEmployees();
+            renderEmployeeList(searchInput.value);
+            renderAdminEmployeeList();
+            
+            // Update employee names in clock events
+            clockEvents.forEach(event => {
+                if (event.employee_id === employeeId) {
+                    event.employee_name = newName;
+                }
+            });
+            saveClockEvents();
+            
+            showNotification('Employee renamed successfully', 'success');
+        }
+        
+        // Handle canceling inline edit
+        function handleCancelEdit(e) {
+            const employeeId = parseInt(e.target.getAttribute('data-id'));
+            const displayElement = document.querySelector(`#edit-${employeeId}`).previousElementSibling;
+            const editElement = document.getElementById(`edit-${employeeId}`);
+            
+            // Show display, hide edit
+            displayElement.style.display = 'block';
+            editElement.style.display = 'none';
+        }
+        
+        // Handle toggling employee active status
+        function handleToggleEmployee(e) {
+            const employeeId = parseInt(e.target.getAttribute('data-id'));
+            const employee = employees.find(emp => emp.id === employeeId);
+            
+            if (!employee) return;
+            
+            employee.active = !employee.active;
+            saveEmployees();
+            renderEmployeeList(searchInput.value);
+            renderAdminEmployeeList();
+            
+            showNotification(`Employee ${employee.active ? 'activated' : 'deactivated'} successfully`, 'success');
+        }
+        
+        // Handle deleting an employee
+        function handleDeleteEmployee(e) {
+            const employeeId = parseInt(e.target.getAttribute('data-id'));
+            
+            if (!confirm('Are you sure you want to delete this employee? This action cannot be undone.')) {
+                return;
+            }
+            
+            employees = employees.filter(emp => emp.id !== employeeId);
+            saveEmployees();
+            renderEmployeeList(searchInput.value);
+            renderAdminEmployeeList();
+            
+            showNotification('Employee deleted successfully', 'success');
+        }
+        
+        // Handle exporting CSV
+        function handleExportCsv() {
+            const start = new Date(startDate.value);
+            const end = new Date(endDate.value);
+            end.setHours(23, 59, 59, 999); // End of the day
+            
+            // Generate timesheet format CSV (like your image)
+            const csvContent = generateTimesheetCsv(start, end);
+            
+            // Create download link
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `bundy-clock-export-${startDate.value}-to-${endDate.value}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showNotification('CSV exported successfully', 'success');
+        }
+        
+        // Generate timesheet format CSV (like your image)
+        function generateTimesheetCsv(startDate, endDate) {
+            // Get all dates in range
+            const dates = [];
+            const currentDate = new Date(startDate);
+            
+            while (currentDate <= endDate) {
+                dates.push(new Date(currentDate));
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+            
+            // Create CSV header - exactly like your image
+            let csvContent = 'employee_name,';
+            
+            dates.forEach(date => {
+                const dateStr = formatDateForCsv(date);
+                csvContent += `${dateStr},,`;
+            });
+            
+            csvContent = csvContent.slice(0, -1) + '\n'; // Remove trailing comma
+            
+            // Add sub-header for In/Out columns
+            csvContent += ',';
+            
+            dates.forEach(() => {
+                csvContent += 'In,Out,';
+            });
+            
+            csvContent = csvContent.slice(0, -1) + '\n'; // Remove trailing comma
+            
+            // Add data for each employee (include all employees, even those with no events)
+            employees.forEach(employee => {
+                if (!employee.active) return; // Skip inactive employees
+                
+                csvContent += `"${employee.name}",`;
+                
+                dates.forEach(date => {
+                    // Get events for this employee on this date
+                    const dayEvents = clockEvents.filter(event => {
+                        const eventDate = new Date(event.timestamp_iso);
+                        return event.employee_id === employee.id && eventDate.toDateString() === date.toDateString();
+                    });
+                    
+                    // Sort events by time
+                    dayEvents.sort((a, b) => new Date(a.timestamp_iso) - new Date(b.timestamp_iso));
+                    
+                    // Group events into pairs (in/out)
+                    const pairs = [];
+                    let currentPair = { in: null, out: null };
+                    
+                    dayEvents.forEach(event => {
+                        if (event.action === 'in') {
+                            // If we already have an in without an out, push it and start new
+                            if (currentPair.in && currentPair.out) {
+                                pairs.push({...currentPair});
+                                currentPair = { in: event, out: null };
+                            } else {
+                                currentPair.in = event;
+                            }
+                        } else if (event.action === 'out') {
+                            currentPair.out = event;
+                            // If we have both in and out, push the pair
+                            if (currentPair.in && currentPair.out) {
+                                pairs.push({...currentPair});
+                                currentPair = { in: null, out: null };
+                            }
+                        }
+                    });
+                    
+                    // Add any incomplete pair
+                    if (currentPair.in) {
+                        pairs.push(currentPair);
+                    }
+                    
+                    // Add all pairs for this day
+                    pairs.forEach(pair => {
+                        const inTime = pair.in ? formatTimeForCsv(new Date(pair.in.timestamp_iso)) : '';
+                        const outTime = pair.out ? formatTimeForCsv(new Date(pair.out.timestamp_iso)) : '';
+                        csvContent += `${inTime},${outTime},`;
+                    });
+                    
+                    // If no pairs for this day, add empty cells
+                    if (pairs.length === 0) {
+                        csvContent += ',';
+                    }
+                });
+                
+                csvContent = csvContent.slice(0, -1) + '\n'; // Remove trailing comma
+            });
+            
+            return csvContent;
+        }
+        
+        // Format date for CSV (DD/MM/YYYY)
+        function formatDateForCsv(date) {
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            return `${day}/${month}/${year}`;
+        }
+        
+        // Format time for CSV (HHMM)
+        function formatTimeForCsv(date) {
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${hours}${minutes}`;
+        }
+        
+        // Handle updating admin PIN
+        function handleUpdatePin() {
+            const newPinValue = newPin.value;
+            const confirmPinValue = confirmPin.value;
+            
+            if (!newPinValue || !confirmPinValue) {
+                showNotification('Please enter and confirm the new PIN', 'error');
+                return;
+            }
+            
+            if (newPinValue !== confirmPinValue) {
+                showNotification('PINs do not match', 'error');
+                return;
+            }
+            
+            if (newPinValue.length < 4) {
+                showNotification('PIN must be at least 4 characters', 'error');
+                return;
+            }
+            
+            adminPin = newPinValue;
+            saveAdminPin();
+            
+            newPin.value = '';
+            confirmPin.value = '';
+            
+            showNotification('PIN updated successfully', 'success');
+        }
+        
+        // Handle importing CSV
+        function handleImportCsv() {
+            const file = csvFile.files[0];
+            
+            if (!file) {
+                showNotification('Please select a CSV file', 'error');
+                return;
+            }
+            
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                const contents = e.target.result;
+                const lines = contents.split('\n');
+                
+                // Skip header row
+                for (let i = 1; i < lines.length; i++) {
+                    const line = lines[i].trim();
+                    if (!line) continue;
+                    
+                    // Simple CSV parsing (for name column only)
+                    const columns = line.split(',');
+                    const name = columns[0].replace(/"/g, '').trim();
+                    
+                    if (name && !employees.some(emp => emp.name.toLowerCase() === name.toLowerCase())) {
+                        const newId = employees.length > 0 ? Math.max(...employees.map(emp => emp.id)) + 1 : 1;
+                        
+                        employees.push({
+                            id: newId,
+                            name: name,
+                            active: true
+                        });
+                    }
+                }
+                
+                saveEmployees();
+                renderEmployeeList(searchInput.value);
+                renderAdminEmployeeList();
+                
+                // Close modal and reset file input
+                importCsvModal.style.display = 'none';
+                csvFile.value = '';
+                
+                showNotification('CSV imported successfully', 'success');
+            };
+            
+            reader.readAsText(file);
+        }
+        
+        // Check and perform auto clock-out if needed
+        function checkAutoClockOut() {
+            if (!autoClockOutEnabled) return;
+            
+            const now = new Date();
+            const today = now.toDateString();
+            
+            // Check if we've already done auto clock-out today
+            if (lastAutoClockOutDate === today) return;
+            
+            // Parse auto clock-out time
+            const [hours, minutes] = autoClockOutTime.split(':').map(Number);
+            const autoClockOutDateTime = new Date();
+            autoClockOutDateTime.setHours(hours, minutes, 0, 0);
+            
+            // If it's past the auto clock-out time, clock everyone out
+            if (now > autoClockOutDateTime) {
+                performAutoClockOut();
+                lastAutoClockOutDate = today;
+                localStorage.setItem('bundyClockLastAutoClockOut', today);
+            }
+        }
+        
+        // Perform auto clock-out for all clocked-in employees
+        function performAutoClockOut() {
+            const now = new Date();
+            let clockedOutCount = 0;
+            
+            employees.forEach(employee => {
+                const lastEvent = getLastEventForEmployee(employee.id);
+                if (lastEvent && lastEvent.action === 'in') {
+                    // Create clock out event
+                    const event = {
+                        employee_id: employee.id,
+                        employee_name: employee.name,
+                        action: 'out',
+                        timestamp_iso: now.toISOString(),
+                        timestamp_local: now.toLocaleString()
+                    };
+                    
+                    clockEvents.push(event);
+                    clockedOutCount++;
+                }
+            });
+            
+            if (clockedOutCount > 0) {
+                saveClockEvents();
+                renderEmployeeList(searchInput.value);
+                console.log(`Auto clocked out ${clockedOutCount} employees at ${now.toLocaleString()}`);
+            }
+        }
+        
+        // Manually clock out all employees
+        function handleManualClockOut() {
+            if (!confirm('Are you sure you want to clock out all employees?')) {
+                return;
+            }
+            
+            performAutoClockOut();
+            showNotification('All employees have been clocked out', 'success');
+        }
+        
+        // Generate activity report
+        function generateActivityReport() {
+            const employeeId = reportEmployee.value;
+            const start = new Date(reportStartDate.value);
+            const end = new Date(reportEndDate.value);
+            end.setHours(23, 59, 59, 999);
+            
+            // Include all employees in the report, even those with no events
+            let employeesToReport = employees;
+            if (employeeId) {
+                employeesToReport = employees.filter(emp => emp.id == employeeId);
+            }
+            
+            // Group events by employee and date
+            const eventsByEmployee = {};
+            
+            employeesToReport.forEach(employee => {
+                if (!eventsByEmployee[employee.name]) {
+                    eventsByEmployee[employee.name] = {};
+                }
+                
+                // Get events for this employee in the date range
+                const employeeEvents = clockEvents.filter(event => {
+                    const eventDate = new Date(event.timestamp_iso);
+                    const dateInRange = eventDate >= start && eventDate <= end;
+                    const employeeMatch = event.employee_id === employee.id;
+                    return dateInRange && employeeMatch;
+                });
+                
+                // Group by date
+                employeeEvents.forEach(event => {
+                    const eventDate = new Date(event.timestamp_iso).toDateString();
+                    if (!eventsByEmployee[employee.name][eventDate]) {
+                        eventsByEmployee[employee.name][eventDate] = [];
+                    }
+                    eventsByEmployee[employee.name][eventDate].push(event);
+                });
+            });
+            
+            let reportHTML = '<table class="employee-table"><thead><tr><th>Employee</th><th>Date</th><th>Clock Events</th></tr></thead><tbody>';
+            
+            Object.keys(eventsByEmployee).forEach(employeeName => {
+                // If employee has no events, still show them
+                if (Object.keys(eventsByEmployee[employeeName]).length === 0) {
+                    reportHTML += `
+                        <tr>
+                            <td>${employeeName}</td>
+                            <td>No events in selected range</td>
+                            <td></td>
+                        </tr>
+                    `;
+                } else {
+                    Object.keys(eventsByEmployee[employeeName]).forEach(date => {
+                        const events = eventsByEmployee[employeeName][date];
+                        events.sort((a, b) => new Date(a.timestamp_iso) - new Date(b.timestamp_iso));
+                        
+                        let eventsHTML = '';
+                        events.forEach(event => {
+                            const time = new Date(event.timestamp_iso).toLocaleTimeString();
+                            eventsHTML += `<div>${time} - ${event.action.toUpperCase()}</div>`;
+                        });
+                        
+                        reportHTML += `
+                            <tr>
+                                <td>${employeeName}</td>
+                                <td>${new Date(date).toLocaleDateString()}</td>
+                                <td>${eventsHTML}</td>
+                            </tr>
+                        `;
+                    });
+                }
+            });
+            
+            reportHTML += '</tbody></table>';
+            reportResults.innerHTML = reportHTML;
+        }
+        
+        // Show notification
+        function showNotification(message, type) {
+            notification.textContent = message;
+            notification.className = `notification ${type} show`;
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 3000);
+        }
+        
+        // Setup event listeners
+        function setupEventListeners() {
+            // Search functionality
+            searchInput.addEventListener('input', (e) => {
+                renderEmployeeList(e.target.value);
+            });
+            
+            // Admin button
+            adminBtn.addEventListener('click', () => {
+                loginModal.style.display = 'flex';
+                pinInput.focus();
+            });
+            
+            // Back to kiosk button
+            backToKioskBtn.addEventListener('click', () => {
+                adminView.style.display = 'none';
+                kioskView.style.display = 'block';
+            });
+            
+            // Close login modal
+            closeLoginModal.addEventListener('click', () => {
+                loginModal.style.display = 'none';
+                pinInput.value = '';
+            });
+            
+            // Login button
+            loginBtn.addEventListener('click', () => {
+                if (pinInput.value === adminPin) {
+                    isAdmin = true;
+                    loginModal.style.display = 'none';
+                    kioskView.style.display = 'none';
+                    adminView.style.display = 'block';
+                    renderAdminEmployeeList();
+                    pinInput.value = '';
+                } else {
+                    showNotification('Invalid PIN', 'error');
+                }
+            });
+            
+            // Add employee
+            addEmployeeBtn.addEventListener('click', handleAddEmployee);
+            
+            // Export CSV
+            exportCsvBtn.addEventListener('click', handleExportCsv);
+            
+            // Update PIN
+            updatePinBtn.addEventListener('click', handleUpdatePin);
+            
+            // Import CSV
+            importCsvBtn.addEventListener('click', () => {
+                importCsvModal.style.display = 'flex';
+            });
+            
+            // Close import CSV modal
+            closeImportCsvModal.addEventListener('click', () => {
+                importCsvModal.style.display = 'none';
+                csvFile.value = '';
+            });
+            
+            // Process CSV
+            processCsvBtn.addEventListener('click', handleImportCsv);
+            
+            // Supabase settings
+            saveSupabaseBtn.addEventListener('click', saveSupabaseSettings);
+            syncDataBtn.addEventListener('click', syncDataWithSupabase);
+            
+            // Auto clock-out
+            saveAutoClockOutBtn.addEventListener('click', saveAutoClockOutSettings);
+            manualClockOutBtn.addEventListener('click', handleManualClockOut);
+            
+            // Reports
+            generateReportBtn.addEventListener('click', generateActivityReport);
+            
+            // Allow Enter key to submit forms
+            pinInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    loginBtn.click();
+                }
+            });
+            
+            newEmployeeName.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    addEmployeeBtn.click();
+                }
+            });
+            
+            newPin.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    updatePinBtn.click();
+                }
+            });
+            
+            confirmPin.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    updatePinBtn.click();
+                }
+            });
+        }
+        
+        // Initialize the app when DOM is loaded
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
