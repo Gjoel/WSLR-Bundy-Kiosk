@@ -679,6 +679,53 @@
         const reportEndDate = document.getElementById('reportEndDate');
         const generateReportBtn = document.getElementById('generateReportBtn');
         const reportResults = document.getElementById('reportResults');
+
+        // Load data from localStorage
+        function loadData() {
+            // Load employees
+            const storedEmployees = localStorage.getItem('bundyClockEmployees');
+            if (storedEmployees) {
+                employees = JSON.parse(storedEmployees);
+            } else {
+                // Default employees if none exist
+                employees = [
+                    { id: 1, name: 'Abbie Walsh', active: true },
+                    { id: 2, name: 'Ajser Murati', active: true },
+                    { id: 3, name: 'Anjolique Bourgeois', active: true },
+                    { id: 4, name: 'Ashley Hilder', active: true },
+                    { id: 5, name: 'Alison Platt', active: true },
+                    { id: 6, name: 'Amber Hewett', active: true },
+                    { id: 7, name: 'Bella Morgan', active: true },
+                    { id: 8, name: 'Bernard Stewart', active: true }
+                ];
+                saveEmployees();
+            }
+            
+            // Load clock events
+            const storedEvents = localStorage.getItem('bundyClockEvents');
+            if (storedEvents) {
+                clockEvents = JSON.parse(storedEvents);
+            }
+            
+            // Load admin PIN
+            const storedPin = localStorage.getItem('bundyClockPin');
+            if (storedPin) {
+                adminPin = storedPin;
+            }
+            
+            // Load auto clock-out settings
+            const storedAutoClockOut = localStorage.getItem('bundyClockAutoClockOut');
+            if (storedAutoClockOut) {
+                const autoClockOutSettings = JSON.parse(storedAutoClockOut);
+                autoClockOutEnabled = autoClockOutSettings.enabled;
+                autoClockOutTime = autoClockOutSettings.time;
+                enableAutoClockOut.checked = autoClockOutEnabled;
+                autoClockOutTimeInput.value = autoClockOutTime;
+            }
+            
+            // Load last auto clock-out date
+            lastAutoClockOutDate = localStorage.getItem('bundyClockLastAutoClockOut');
+        }
         
         // Initialize the app
         function init() {
