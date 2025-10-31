@@ -629,7 +629,7 @@
         // Initialize state
         let employees = [];
         let clockEvents = [];
-        let adminPin = "1234"; // Default PIN
+        let adminPin = "1234";
         let isAdmin = false;
         let currentView = 'kiosk';
         let supabase = null;
@@ -689,8 +689,8 @@
             setupEventListeners();
             
             // Set up auto clock-out check
-            setInterval(checkAutoClockOut, 60000); // Check every minute
-            checkAutoClockOut(); // Check immediately on load
+            setInterval(checkAutoClockOut, 60000);
+            checkAutoClockOut();
             
             // Set default dates for export
             const today = new Date();
@@ -714,6 +714,40 @@
             if (supabaseUrl && supabaseKey) {
                 supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
                 console.log('Supabase client initialized');
+                
+                // Auto-create tables if they don't exist
+                createTablesIfNeeded();
+            }
+        }
+
+        // Create tables if they don't exist
+        async function createTablesIfNeeded() {
+            if (!supabase) return;
+            
+            try {
+                // Try to select from employees table to see if it exists
+                const { error: employeesError } = await supabase
+                    .from('employees')
+                    .select('id')
+                    .limit(1);
+                
+                if (employeesError && employeesError.message.includes('does not exist')) {
+                    console.log('Creating employees table...');
+                    // Table doesn't exist, we'll handle this in the sync function
+                }
+                
+                // Try to select from clock_events table to see if it exists
+                const { error: eventsError } = await supabase
+                    .from('clock_events')
+                    .select('id')
+                    .limit(1);
+                
+                if (eventsError && eventsError.message.includes('does not exist')) {
+                    console.log('Creating clock_events table...');
+                    // Table doesn't exist, we'll handle this in the sync function
+                }
+            } catch (error) {
+                console.log('Tables may not exist, will create during sync:', error);
             }
         }
         
@@ -734,7 +768,7 @@
             showNotification('Supabase settings saved successfully', 'success');
         }
         
-        // Sync data with Supabase
+        // Sync data with Supabase (IMPROVED VERSION)
         async function syncDataWithSupabase() {
             if (!supabase) {
                 showNotification('Supabase not configured', 'error');
@@ -742,45 +776,69 @@
             }
             
             try {
-                // Sync employees
-                const { data: supabaseEmployees, error: employeesError } = await supabase
-                    .from('employees')
-                    .select('*');
+                // First, try to get existing data from Supabase
+                let supabaseEmployees = [];
+                let supabaseEvents = [];
                 
-                if (employeesError) throw employeesError;
-                
-                // Merge employees (Supabase takes precedence)
-                if (supabaseEmployees && supabaseEmployees.length > 0) {
-                    employees = supabaseEmployees;
-                    saveEmployees();
-                } else {
-                    // If no employees in Supabase, push our local employees
-                    const { error: insertError } = await supabase
+                try {
+                    const { data: employeesData, error: employeesError } = await supabase
                         .from('employees')
-                        .upsert(employees);
+                        .select('*');
                     
-                    if (insertError) throw insertError;
-                }
-                
-                // Sync clock events
-                const { data: supabaseEvents, error: eventsError } = await supabase
-                    .from('clock_events')
-                    .select('*');
-                
-                if (eventsError) throw eventsError;
-                
-                // Merge events (Supabase takes precedence)
-                if (supabaseEvents && supabaseEvents.length > 0) {
-                    clockEvents = supabaseEvents;
-                    saveClockEvents();
-                } else {
-                    // If no events in Supabase, push our local events
-                    const { error: insertError } = await supabase
+                    if (employeesError) {
+                        if (employeesError.message.includes('does not exist')) {
+                            // Table doesn't exist, create it by inserting our data
+                            console.log('Employees table does not exist, creating it...');
+                            const { error: insertError } = await supabase
+                                .from('employees')
+                                .insert(employees);
+                            
+                            if (insertError) throw insertError;
+                            supabaseEmployees = employees;
+                        } else {
+                            throw employeesError;
+                        }
+                    } else {
+                        supabaseEmployees = employeesData || [];
+                    }
+                    
+                    const { data: eventsData, error: eventsError } = await supabase
                         .from('clock_events')
-                        .upsert(clockEvents);
+                        .select('*');
                     
-                    if (insertError) throw insertError;
+                    if (eventsError) {
+                        if (eventsError.message.includes('does not exist')) {
+                            // Table doesn't exist, create it by inserting our data
+                            console.log('Clock events table does not exist, creating it...');
+                            const { error: insertError } = await supabase
+                                .from('clock_events')
+                                .insert(clockEvents);
+                            
+                            if (insertError) throw insertError;
+                            supabaseEvents = clockEvents;
+                        } else {
+                            throw eventsError;
+                        }
+                    } else {
+                        supabaseEvents = eventsData || [];
+                    }
+                } catch (tableError) {
+                    console.error('Table creation error:', tableError);
+                    showNotification('Error creating tables in Supabase. Please check if tables exist.', 'error');
+                    return;
                 }
+                
+                // Merge data (Supabase takes precedence for existing records)
+                const mergedEmployees = mergeEmployees(employees, supabaseEmployees);
+                const mergedEvents = mergeEvents(clockEvents, supabaseEvents);
+                
+                // Update local state with merged data
+                employees = mergedEmployees;
+                clockEvents = mergedEvents;
+                
+                // Save merged data back to localStorage and Supabase
+                await saveEmployees();
+                await saveClockEvents();
                 
                 renderEmployeeList(searchInput.value);
                 renderAdminEmployeeList();
@@ -790,19 +848,66 @@
                 showNotification('Error syncing with Supabase: ' + error.message, 'error');
             }
         }
+
+        // Merge employees data
+        function mergeEmployees(localEmployees, supabaseEmployees) {
+            const merged = [...localEmployees];
+            const localIds = new Set(localEmployees.map(e => e.id));
+            
+            // Add any employees from Supabase that aren't in local
+            supabaseEmployees.forEach(supabaseEmp => {
+                if (!localIds.has(supabaseEmp.id)) {
+                    merged.push(supabaseEmp);
+                }
+            });
+            
+            return merged;
+        }
+
+        // Merge clock events data
+        function mergeEvents(localEvents, supabaseEvents) {
+            const merged = [...localEvents];
+            const localEventKeys = new Set(localEvents.map(e => 
+                `${e.employee_id}-${e.timestamp_iso}-${e.action}`
+            ));
+            
+            // Add any events from Supabase that aren't in local
+            supabaseEvents.forEach(supabaseEvent => {
+                const key = `${supabaseEvent.employee_id}-${supabaseEvent.timestamp_iso}-${supabaseEvent.action}`;
+                if (!localEventKeys.has(key)) {
+                    merged.push(supabaseEvent);
+                }
+            });
+            
+            return merged;
+        }
         
-        // Save to Supabase
+        // Save to Supabase with automatic retry and table creation
         async function saveToSupabase(table, data) {
             if (!supabase) return;
             
             try {
+                // First try to upsert the data
                 const { error } = await supabase
                     .from(table)
                     .upsert(data);
                 
-                if (error) throw error;
+                if (error) {
+                    if (error.message.includes('does not exist')) {
+                        // Table doesn't exist, try to create it by inserting
+                        console.log(`Table ${table} doesn't exist, attempting to create...`);
+                        const { error: insertError } = await supabase
+                            .from(table)
+                            .insert(data);
+                        
+                        if (insertError) throw insertError;
+                    } else {
+                        throw error;
+                    }
+                }
             } catch (error) {
-                console.error('Error saving to Supabase:', error);
+                console.error(`Error saving to ${table}:`, error);
+                // Don't show notification here to avoid spam during auto-saves
             }
         }
         
@@ -853,19 +958,19 @@
             lastAutoClockOutDate = localStorage.getItem('bundyClockLastAutoClockOut');
         }
         
-        // Save employees to localStorage
-        function saveEmployees() {
+        // Save employees to localStorage AND Supabase (INSTANT SYNC)
+        async function saveEmployees() {
             localStorage.setItem('bundyClockEmployees', JSON.stringify(employees));
             if (supabase) {
-                saveToSupabase('employees', employees);
+                await saveToSupabase('employees', employees);
             }
         }
         
-        // Save clock events to localStorage
-        function saveClockEvents() {
+        // Save clock events to localStorage AND Supabase (INSTANT SYNC)
+        async function saveClockEvents() {
             localStorage.setItem('bundyClockEvents', JSON.stringify(clockEvents));
             if (supabase) {
-                saveToSupabase('clock_events', clockEvents);
+                await saveToSupabase('clock_events', clockEvents);
             }
         }
         
@@ -1015,7 +1120,7 @@
         }
         
         // Handle clock in/out action
-        function handleClockAction(e) {
+        async function handleClockAction(e) {
             const employeeId = parseInt(e.target.getAttribute('data-id'));
             const employee = employees.find(emp => emp.id === employeeId);
             
@@ -1037,14 +1142,14 @@
             };
             
             clockEvents.push(event);
-            saveClockEvents();
+            await saveClockEvents(); // Wait for sync to complete
             
             renderEmployeeList(searchInput.value);
             showNotification(`${employee.name} clocked ${action} successfully`, 'success');
         }
         
         // Handle adding a new employee
-        function handleAddEmployee() {
+        async function handleAddEmployee() {
             const name = newEmployeeName.value.trim();
             
             if (!name) {
@@ -1066,7 +1171,7 @@
                 active: true
             });
             
-            saveEmployees();
+            await saveEmployees(); // Wait for sync to complete
             renderEmployeeList(searchInput.value);
             renderAdminEmployeeList();
             newEmployeeName.value = '';
@@ -1087,7 +1192,7 @@
         }
         
         // Handle saving inline edit
-        function handleSaveEdit(e) {
+        async function handleSaveEdit(e) {
             const employeeId = parseInt(e.target.getAttribute('data-id'));
             const newName = document.getElementById(`edit-input-${employeeId}`).value.trim();
             const employee = employees.find(emp => emp.id === employeeId);
@@ -1110,7 +1215,7 @@
             }
             
             employee.name = newName;
-            saveEmployees();
+            await saveEmployees();
             renderEmployeeList(searchInput.value);
             renderAdminEmployeeList();
             
@@ -1120,7 +1225,7 @@
                     event.employee_name = newName;
                 }
             });
-            saveClockEvents();
+            await saveClockEvents();
             
             showNotification('Employee renamed successfully', 'success');
         }
@@ -1137,14 +1242,14 @@
         }
         
         // Handle toggling employee active status
-        function handleToggleEmployee(e) {
+        async function handleToggleEmployee(e) {
             const employeeId = parseInt(e.target.getAttribute('data-id'));
             const employee = employees.find(emp => emp.id === employeeId);
             
             if (!employee) return;
             
             employee.active = !employee.active;
-            saveEmployees();
+            await saveEmployees();
             renderEmployeeList(searchInput.value);
             renderAdminEmployeeList();
             
@@ -1152,7 +1257,7 @@
         }
         
         // Handle deleting an employee
-        function handleDeleteEmployee(e) {
+        async function handleDeleteEmployee(e) {
             const employeeId = parseInt(e.target.getAttribute('data-id'));
             
             if (!confirm('Are you sure you want to delete this employee? This action cannot be undone.')) {
@@ -1160,7 +1265,7 @@
             }
             
             employees = employees.filter(emp => emp.id !== employeeId);
-            saveEmployees();
+            await saveEmployees();
             renderEmployeeList(searchInput.value);
             renderAdminEmployeeList();
             
@@ -1328,7 +1433,7 @@
         }
         
         // Handle importing CSV
-        function handleImportCsv() {
+        async function handleImportCsv() {
             const file = csvFile.files[0];
             
             if (!file) {
@@ -1400,7 +1505,7 @@
         }
         
         // Perform auto clock-out for all clocked-in employees
-        function performAutoClockOut() {
+        async function performAutoClockOut() {
             const now = new Date();
             let clockedOutCount = 0;
             
@@ -1422,19 +1527,19 @@
             });
             
             if (clockedOutCount > 0) {
-                saveClockEvents();
+                await saveClockEvents();
                 renderEmployeeList(searchInput.value);
                 console.log(`Auto clocked out ${clockedOutCount} employees at ${now.toLocaleString()}`);
             }
         }
         
         // Manually clock out all employees
-        function handleManualClockOut() {
+        async function handleManualClockOut() {
             if (!confirm('Are you sure you want to clock out all employees?')) {
                 return;
             }
             
-            performAutoClockOut();
+            await performAutoClockOut();
             showNotification('All employees have been clocked out', 'success');
         }
         
@@ -1479,7 +1584,7 @@
             
             let reportHTML = '<table class="employee-table"><thead><tr><th>Employee</th><th>Date</th><th>Clock Events</th></tr></thead><tbody>';
             
-            Object.keys(eventsByEmployee).forEach(employeeName => {
+            Object.keys(eventsByEmployee).forEach(employeeName) {
                 // If employee has no events, still show them
                 if (Object.keys(eventsByEmployee[employeeName]).length === 0) {
                     reportHTML += `
