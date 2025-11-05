@@ -194,12 +194,12 @@ export default function AdminPanel({ onLock, onBackToKiosk }) {
 
       if (empError) throw empError
 
-      const startDate = new Date(exportStartDate)
-      startDate.setHours(0, 0, 0, 0)
-      const endDate = new Date(exportEndDate)
-      endDate.setHours(23, 59, 59, 999)
+      // Handle date range with proper timezone
+      const startDate = new Date(exportStartDate + 'T00:00:00')
+      const endDate = new Date(exportEndDate + 'T23:59:59')
 
-      // Collect all employee data
+      // Collect all unique dates and organize data
+      const allDatesSet = new Set()
       const employeeData = []
       
       for (const emp of activeEmployees) {
@@ -213,10 +213,7 @@ export default function AdminPanel({ onLock, onBackToKiosk }) {
 
         if (entriesError) throw entriesError
 
-        const dates = []
-        const times = []
-        
-        // Group entries by date
+        // Group by date
         const byDate = {}
         entries.forEach(entry => {
           const date = new Date(entry.created_at)
@@ -226,6 +223,8 @@ export default function AdminPanel({ onLock, onBackToKiosk }) {
             year: 'numeric' 
           })
           
+          allDatesSet.add(dateKey)
+          
           if (!byDate[dateKey]) byDate[dateKey] = []
           byDate[dateKey].push({
             direction: entry.direction,
@@ -233,20 +232,33 @@ export default function AdminPanel({ onLock, onBackToKiosk }) {
           })
         })
 
-        // Sort dates
-        const sortedDates = Object.keys(byDate).sort((a, b) => {
-          const [dayA, monthA, yearA] = a.split('/')
-          const [dayB, monthB, yearB] = b.split('/')
-          return new Date(yearA, monthA - 1, dayA) - new Date(yearB, monthB - 1, dayB)
+        employeeData.push({ 
+          name: emp.name, 
+          entriesByDate: byDate 
         })
+      }
 
-        sortedDates.forEach(dateKey => {
-          const dayEntries = byDate[dateKey]
+      // Sort all unique dates chronologically
+      const allDates = Array.from(allDatesSet).sort((a, b) => {
+        const [dayA, monthA, yearA] = a.split('/')
+        const [dayB, monthB, yearB] = b.split('/')
+        return new Date(yearA, monthA - 1, dayA) - new Date(yearB, monthB - 1, dayB)
+      })
+
+      // Build CSV data
+      const csvData = []
+      
+      for (const empData of employeeData) {
+        const row = [empData.name]
+        
+        // For each date, add all in/out pairs for this employee
+        allDates.forEach(dateKey => {
+          const dayEntries = empData.entriesByDate[dateKey] || []
           
+          // Process entries in pairs
+          let pairCount = 0
           for (let i = 0; i < dayEntries.length; i += 2) {
             if (dayEntries[i] && dayEntries[i].direction === 'in') {
-              dates.push(dateKey)
-              
               const startTime = dayEntries[i].time
               const startStr = startTime.toLocaleTimeString('en-AU', { 
                 hour: '2-digit', 
@@ -264,51 +276,34 @@ export default function AdminPanel({ onLock, onBackToKiosk }) {
                 }).replace(':', '')
               }
               
-              times.push(startStr, finishStr)
+              row.push(startStr, finishStr)
+              pairCount++
             }
           }
+          
+          // If no entries for this date, add empty cells
+          if (pairCount === 0) {
+            row.push('', '')
+          }
         })
-
-        employeeData.push({ name: emp.name, dates, times })
+        
+        csvData.push(row)
       }
-
-      // Find max number of time pairs
-      const maxPairs = Math.max(...employeeData.map(emp => emp.dates.length))
 
       // Build headers
       const dateHeader = ['employee_name']
       const inOutHeader = ['']
       
-      // Use dates from the first employee that has data
-      const firstEmpWithData = employeeData.find(emp => emp.dates.length > 0)
-      if (firstEmpWithData) {
-        firstEmpWithData.dates.forEach(date => {
-          dateHeader.push(date, '')
-          inOutHeader.push('In', 'Out')
-        })
-      }
-      
-      // Pad headers if needed
-      while (dateHeader.length < 1 + maxPairs * 2) {
-        dateHeader.push('')
-        inOutHeader.push(dateHeader.length % 2 === 0 ? 'In' : 'Out')
-      }
-
-      // Build data rows
-      const dataRows = employeeData.map(emp => {
-        const row = [emp.name, ...emp.times]
-        // Pad to match max columns
-        while (row.length < 1 + maxPairs * 2) {
-          row.push('')
-        }
-        return row
+      allDates.forEach(date => {
+        dateHeader.push(date, '')
+        inOutHeader.push('In', 'Out')
       })
 
       // Generate CSV
       const csv = [
         dateHeader.join(','),
         inOutHeader.join(','),
-        ...dataRows.map(row => row.join(','))
+        ...csvData.map(row => row.join(','))
       ].join('\n')
 
       // Download
