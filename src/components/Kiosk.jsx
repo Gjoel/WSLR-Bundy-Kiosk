@@ -10,8 +10,10 @@ const supabase = createClient(
 export default function Kiosk({ onAdminClick }) {
   const [employees, setEmployees] = useState([])
   const [statuses, setStatuses] = useState({})
+  const [lastEntries, setLastEntries] = useState({})
   const [loading, setLoading] = useState(true)
   const [currentTime, setCurrentTime] = useState(new Date())
+  const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
     loadEmployees()
@@ -39,22 +41,30 @@ export default function Kiosk({ onAdminClick }) {
 
       // Load latest time entry for each employee
       const statusMap = {}
+      const lastEntryMap = {}
       
       for (const emp of employeesData) {
         const { data: entries, error: entriesError } = await supabase
           .from('time_entries')
-          .select('direction')
+          .select('*')
           .eq('employee_id', emp.id)
           .order('created_at', { ascending: false })
           .limit(1)
 
         if (entriesError) throw entriesError
 
-        statusMap[emp.id] = entries.length > 0 ? entries[0].direction : 'out'
+        if (entries.length > 0) {
+          statusMap[emp.id] = entries[0].direction
+          lastEntryMap[emp.id] = entries[0].created_at
+        } else {
+          statusMap[emp.id] = 'out'
+          lastEntryMap[emp.id] = null
+        }
       }
 
       setEmployees(employeesData)
       setStatuses(statusMap)
+      setLastEntries(lastEntryMap)
     } catch (error) {
       console.error('Error loading employees:', error)
     } finally {
@@ -79,6 +89,11 @@ export default function Kiosk({ onAdminClick }) {
       day: 'numeric'
     })
   }
+
+  // Filter employees based on search term
+  const filteredEmployees = employees.filter(emp => 
+    emp.name.toLowerCase().includes(searchTerm.toLowerCase())
+  )
 
   if (loading) {
     return (
@@ -109,18 +124,50 @@ export default function Kiosk({ onAdminClick }) {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
+        {/* Search Bar */}
+        <div className="mb-6">
+          <div className="relative max-w-md mx-auto">
+            <input
+              type="text"
+              placeholder="Search for your name..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full px-6 py-4 text-lg border-2 border-gray-300 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-2xl font-bold"
+              >
+                ×
+              </button>
+            )}
+          </div>
+          {searchTerm && (
+            <p className="text-center text-sm text-gray-600 mt-2">
+              Showing {filteredEmployees.length} of {employees.length} employees
+            </p>
+          )}
+        </div>
+
         {employees.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-xl text-gray-600">No active employees</p>
             <p className="text-sm text-gray-500 mt-2">Add employees in the Admin Panel</p>
           </div>
+        ) : filteredEmployees.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-xl text-gray-600">No employees found</p>
+            <p className="text-sm text-gray-500 mt-2">Try a different search term</p>
+          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {employees.map((employee) => (
+            {filteredEmployees.map((employee) => (
               <EmployeeCard
                 key={employee.id}
                 employee={employee}
                 status={statuses[employee.id] || 'out'}
+                lastEntry={lastEntries[employee.id]}
                 onStatusChange={loadEmployees}
               />
             ))}
