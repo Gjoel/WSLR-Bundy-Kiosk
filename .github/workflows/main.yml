@@ -30,6 +30,11 @@ jobs:
         run: npm ci
       
       - name: Build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_ORG_ID: ${{ secrets.VITE_ORG_ID }}
+          VITE_ADMIN_PASSCODE: ${{ secrets.VITE_ADMIN_PASSCODE }}
         run: npm run build
       
       - name: Upload artifact
