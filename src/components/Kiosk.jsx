@@ -39,28 +39,34 @@ export default function Kiosk({ onAdminClick }) {
 
       if (empError) throw empError
 
-      // Load latest time entry for each employee
+      // Get all employee IDs
+      const employeeIds = employeesData.map(emp => emp.id)
+
+      // Load ALL latest time entries in one query
+      const { data: allEntries, error: entriesError } = await supabase
+        .from('time_entries')
+        .select('*')
+        .in('employee_id', employeeIds)
+        .order('created_at', { ascending: false })
+
+      if (entriesError) throw entriesError
+
+      // Process entries to find latest for each employee
       const statusMap = {}
       const lastEntryMap = {}
       
-      for (const emp of employeesData) {
-        const { data: entries, error: entriesError } = await supabase
-          .from('time_entries')
-          .select('*')
-          .eq('employee_id', emp.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-
-        if (entriesError) throw entriesError
-
-        if (entries.length > 0) {
-          statusMap[emp.id] = entries[0].direction
-          lastEntryMap[emp.id] = entries[0].created_at
+      // Group entries by employee and keep only the latest
+      employeesData.forEach(emp => {
+        const empEntries = allEntries.filter(entry => entry.employee_id === emp.id)
+        
+        if (empEntries.length > 0) {
+          statusMap[emp.id] = empEntries[0].direction
+          lastEntryMap[emp.id] = empEntries[0].created_at
         } else {
           statusMap[emp.id] = 'out'
           lastEntryMap[emp.id] = null
         }
-      }
+      })
 
       setEmployees(employeesData)
       setStatuses(statusMap)
