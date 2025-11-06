@@ -198,9 +198,9 @@ export default function AdminPanel({ onLock, onBackToKiosk }) {
       const startDate = new Date(exportStartDate + 'T00:00:00')
       const endDate = new Date(exportEndDate + 'T23:59:59')
 
-      // Collect all unique dates and organize data
+      // Collect all data organized by employee and date
       const allDatesSet = new Set()
-      const employeeData = []
+      const employeeDataByDate = []
       
       for (const emp of activeEmployees) {
         const { data: entries, error: entriesError } = await supabase
@@ -213,90 +213,95 @@ export default function AdminPanel({ onLock, onBackToKiosk }) {
 
         if (entriesError) throw entriesError
 
-        // Group by date
-        const byDate = {}
-        entries.forEach(entry => {
-          const date = new Date(entry.created_at)
-          const dateKey = date.toLocaleDateString('en-AU', { 
-            day: '2-digit', 
-            month: '2-digit', 
-            year: 'numeric' 
-          })
-          
-          allDatesSet.add(dateKey)
-          
-          if (!byDate[dateKey]) byDate[dateKey] = []
-          byDate[dateKey].push({
-            direction: entry.direction,
-            time: date
-          })
-        })
+        const pairsByDate = {}
+        
+        // Group pairs by date
+        for (let i = 0; i < entries.length; i += 2) {
+          if (entries[i] && entries[i].direction === 'in') {
+            const date = new Date(entries[i].created_at)
+            const dateKey = date.toLocaleDateString('en-AU', { 
+              day: '2-digit', 
+              month: '2-digit', 
+              year: 'numeric' 
+            })
+            
+            allDatesSet.add(dateKey)
+            
+            if (!pairsByDate[dateKey]) pairsByDate[dateKey] = []
+            
+            const startTime = new Date(entries[i].created_at)
+            const startStr = startTime.toLocaleTimeString('en-AU', { 
+              hour: '2-digit', 
+              minute: '2-digit',
+              hour12: false 
+            }).replace(':', '')
 
-        employeeData.push({ 
-          name: emp.name, 
-          entriesByDate: byDate 
-        })
+            let finishStr = ''
+            if (entries[i + 1] && entries[i + 1].direction === 'out') {
+              const finishTime = new Date(entries[i + 1].created_at)
+              finishStr = finishTime.toLocaleTimeString('en-AU', { 
+                hour: '2-digit', 
+                minute: '2-digit',
+                hour12: false 
+              }).replace(':', '')
+            }
+            
+            pairsByDate[dateKey].push([startStr, finishStr])
+          }
+        }
+
+        employeeDataByDate.push({ name: emp.name, pairsByDate })
       }
 
-      // Sort all unique dates chronologically
+      // Sort all dates
       const allDates = Array.from(allDatesSet).sort((a, b) => {
         const [dayA, monthA, yearA] = a.split('/')
         const [dayB, monthB, yearB] = b.split('/')
         return new Date(yearA, monthA - 1, dayA) - new Date(yearB, monthB - 1, dayB)
       })
 
-      // Build CSV data
-      const csvData = []
-      
-      for (const empData of employeeData) {
-        const row = [empData.name]
-        
-        // For each date, add all in/out pairs for this employee
-        allDates.forEach(dateKey => {
-          const dayEntries = empData.entriesByDate[dateKey] || []
-          
-          // Process entries in pairs
-          let pairCount = 0
-          for (let i = 0; i < dayEntries.length; i += 2) {
-            if (dayEntries[i] && dayEntries[i].direction === 'in') {
-              const startTime = dayEntries[i].time
-              const startStr = startTime.toLocaleTimeString('en-AU', { 
-                hour: '2-digit', 
-                minute: '2-digit',
-                hour12: false 
-              }).replace(':', '')
-
-              let finishStr = ''
-              if (dayEntries[i + 1] && dayEntries[i + 1].direction === 'out') {
-                const finishTime = dayEntries[i + 1].time
-                finishStr = finishTime.toLocaleTimeString('en-AU', { 
-                  hour: '2-digit', 
-                  minute: '2-digit',
-                  hour12: false 
-                }).replace(':', '')
-              }
-              
-              row.push(startStr, finishStr)
-              pairCount++
-            }
-          }
-          
-          // If no entries for this date, add empty cells
-          if (pairCount === 0) {
-            row.push('', '')
-          }
-        })
-        
-        csvData.push(row)
-      }
+      // Find max pairs for each date across all employees
+      const maxPairsByDate = {}
+      allDates.forEach(date => {
+        maxPairsByDate[date] = Math.max(
+          ...employeeDataByDate.map(emp => (emp.pairsByDate[date] || []).length),
+          0
+        )
+      })
 
       // Build headers
       const dateHeader = ['employee_name']
       const inOutHeader = ['']
       
       allDates.forEach(date => {
-        dateHeader.push(date, '')
-        inOutHeader.push('In', 'Out')
+        const pairCount = maxPairsByDate[date]
+        for (let i = 0; i < pairCount; i++) {
+          dateHeader.push(date, '')
+          inOutHeader.push('In', 'Out')
+        }
+      })
+
+      // Build data rows
+      const csvData = employeeDataByDate.map(emp => {
+        const row = [emp.name]
+        
+        allDates.forEach(date => {
+          const pairs = emp.pairsByDate[date] || []
+          const maxForDate = maxPairsByDate[date]
+          
+          // Add this employee's pairs for this date
+          pairs.forEach(pair => {
+            row.push(...pair)
+          })
+          
+          // Pad with empty cells if this employee has fewer pairs than max
+          const remaining = maxForDate - pairs.length
+          for (let i = 0; i < remaining; i++) {
+            row.push('', '')
+          }
+        })
+        
+        return row
       })
 
       // Generate CSV
