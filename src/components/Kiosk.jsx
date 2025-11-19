@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import EmployeeCard from './EmployeeCard'
 
@@ -14,17 +14,76 @@ export default function Kiosk({ onAdminClick }) {
   const [loading, setLoading] = useState(true)
   const [currentTime, setCurrentTime] = useState(new Date())
   const [searchTerm, setSearchTerm] = useState('')
+  const [lastAutoClockoutDate, setLastAutoClockoutDate] = useState(
+    localStorage.getItem('lastAutoClockoutDate') || ''
+  )
 
   useEffect(() => {
     loadEmployees()
+  }, [])
+
+  const checkAutoClockout = useCallback(async (now) => {
+    // Get Sydney time
+    const sydneyTime = new Date(now.toLocaleString('en-US', { timeZone: 'Australia/Sydney' }))
+    const hour = sydneyTime.getHours()
+    const minute = sydneyTime.getMinutes()
+    const todayDate = sydneyTime.toDateString()
     
-    // Update time every second
+    // Check if it's 11:00 PM and we haven't run today
+    if (hour === 23 && minute === 0 && lastAutoClockoutDate !== todayDate) {
+      console.log('Running auto clock-out at 11 PM...')
+      
+      try {
+        // Get all employees who are currently clocked in
+        const clockedInEmployees = employees.filter(emp => statuses[emp.id] === 'in')
+        
+        if (clockedInEmployees.length === 0) {
+          console.log('No employees to clock out')
+          localStorage.setItem('lastAutoClockoutDate', todayDate)
+          setLastAutoClockoutDate(todayDate)
+          return
+        }
+        
+        // Clock them all out
+        let clockedOutCount = 0
+        for (const emp of clockedInEmployees) {
+          const { error } = await supabase
+            .from('time_entries')
+            .insert({
+              employee_id: emp.id,
+              direction: 'out',
+              created_at: new Date().toISOString()
+            })
+          
+          if (!error) {
+            clockedOutCount++
+          }
+        }
+        
+        console.log(`Auto-clocked out ${clockedOutCount} employees at 11 PM`)
+        
+        // Save today's date so we don't run again
+        localStorage.setItem('lastAutoClockoutDate', todayDate)
+        setLastAutoClockoutDate(todayDate)
+        
+        // Refresh the employee list to update UI
+        setTimeout(() => loadEmployees(), 1000)
+      } catch (error) {
+        console.error('Auto clock-out error:', error)
+      }
+    }
+  }, [employees, statuses, lastAutoClockoutDate])
+
+  useEffect(() => {
+    // Update time every second and check for auto clock-out
     const timer = setInterval(() => {
-      setCurrentTime(new Date())
+      const now = new Date()
+      setCurrentTime(now)
+      checkAutoClockout(now)
     }, 1000)
 
     return () => clearInterval(timer)
-  }, [])
+  }, [checkAutoClockout])
 
   const loadEmployees = async () => {
     try {
