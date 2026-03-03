@@ -226,6 +226,7 @@ export default function AdminPanel({ onLock, onBackToKiosk }) {
         .eq('active', true)
         .is('deleted_at', null)
         .order('name')
+        .limit(10000) // Ensure we get all employees
 
       if (empError) throw empError
 
@@ -241,6 +242,7 @@ export default function AdminPanel({ onLock, onBackToKiosk }) {
         .in('employee_id', employeeIds)
         .gte('work_date', exportStartDate)
         .lte('work_date', exportEndDate)
+        .limit(100000) // Ensure we get all comments
 
       if (commentsError) throw commentsError
 
@@ -259,15 +261,34 @@ export default function AdminPanel({ onLock, onBackToKiosk }) {
       const employeeDataByDate = []
 
       for (const emp of activeEmployees) {
-        const { data: entries, error: entriesError } = await supabase
-          .from('time_entries')
-          .select('*')
-          .eq('employee_id', emp.id)
-          .gte('created_at', startDate.toISOString())
-          .lte('created_at', endDate.toISOString())
-          .order('created_at')
+        // Fetch ALL entries for this employee using pagination
+        let allEntries = []
+        let from = 0
+        const pageSize = 1000
+        let hasMore = true
 
-        if (entriesError) throw entriesError
+        while (hasMore) {
+          const { data: entries, error: entriesError } = await supabase
+            .from('time_entries')
+            .select('*')
+            .eq('employee_id', emp.id)
+            .gte('created_at', startDate.toISOString())
+            .lte('created_at', endDate.toISOString())
+            .order('created_at')
+            .range(from, from + pageSize - 1)
+
+          if (entriesError) throw entriesError
+
+          if (entries && entries.length > 0) {
+            allEntries = [...allEntries, ...entries]
+            from += pageSize
+            hasMore = entries.length === pageSize
+          } else {
+            hasMore = false
+          }
+        }
+
+        const entries = allEntries
 
         const pairsByDate = {}
 
@@ -298,12 +319,12 @@ export default function AdminPanel({ onLock, onBackToKiosk }) {
         employeeDataByDate.push({ id: emp.id, name: emp.name, pairsByDate })
       }
 
-      // 6) Find max pairs for each date across all employees (so columns line up)
+      // 6) Find max pairs for each date across all employees (minimum 2 columns per day)
       const maxPairsByDate = {}
       allDates.forEach(date => {
         maxPairsByDate[date] = Math.max(
           ...employeeDataByDate.map(emp => (emp.pairsByDate[date] || []).length),
-          0
+          2  // Minimum of 2 In/Out column pairs per day
         )
       })
 
