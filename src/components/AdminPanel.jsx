@@ -292,10 +292,12 @@ export default function AdminPanel({ onLock, onBackToKiosk }) {
 
         const pairsByDate = {}
 
-        // Group pairs by date (IN + next OUT), forcing Sydney date key
-        for (let i = 0; i < entries.length; i += 2) {
-          if (entries[i] && entries[i].direction === 'in') {
-            const date = new Date(entries[i].created_at)
+        // Group pairs by date - robust logic handles any clocking pattern
+        for (let i = 0; i < entries.length; i++) {
+          const entry = entries[i]
+          
+          if (entry.direction === 'in') {
+            const date = new Date(entry.created_at)
             const dateKey = date.toLocaleDateString('en-AU', {
               day: '2-digit',
               month: '2-digit',
@@ -305,11 +307,15 @@ export default function AdminPanel({ onLock, onBackToKiosk }) {
 
             if (!pairsByDate[dateKey]) pairsByDate[dateKey] = []
 
-            const startStr = formatTimeHHMM(entries[i].created_at)
+            const startStr = formatTimeHHMM(entry.created_at)
 
+            // Find the next OUT entry (if any)
             let finishStr = ''
-            if (entries[i + 1] && entries[i + 1].direction === 'out') {
-              finishStr = formatTimeHHMM(entries[i + 1].created_at)
+            for (let j = i + 1; j < entries.length; j++) {
+              if (entries[j].direction === 'out') {
+                finishStr = formatTimeHHMM(entries[j].created_at)
+                break
+              }
             }
 
             pairsByDate[dateKey].push([startStr, finishStr])
