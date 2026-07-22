@@ -1,0 +1,688 @@
+import { useState, useEffect } from 'react'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+)
+
+// Helpers
+const pad2 = (n) => String(n).padStart(2, '0')
+
+const formatDateDDMMYYYY = (d) => {
+  const dd = pad2(d.getDate())
+  const mm = pad2(d.getMonth() + 1)
+  const yyyy = d.getFullYear()
+  return `${dd}/${mm}/${yyyy}`
+}
+
+const isoToDDMMYYYY = (iso) => {
+  // iso = "YYYY-MM-DD"
+  const [yyyy, mm, dd] = iso.split('-')
+  return `${dd}/${mm}/${yyyy}`
+}
+
+const formatTimeHHMM = (iso) => {
+  const dt = new Date(iso)
+  const hh = pad2(dt.getHours())
+  const mm = pad2(dt.getMinutes())
+  return `${hh}${mm}` // 0809 style
+}
+
+// Convert '0809' style time string to a real number (or null for blank cells)
+// so Excel doesn't flag 'number stored as text'
+const timeCellValue = (t) => (t === '' ? null : parseInt(t, 10))
+
+const buildDateRangeDDMMYYYY = (startISO, endISO) => {
+  // startISO/endISO from <input type="date"> => "YYYY-MM-DD"
+  const start = new Date(startISO + 'T00:00:00')
+  const end = new Date(endISO + 'T00:00:00')
+  const out = []
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    out.push(formatDateDDMMYYYY(d))
+  }
+  return out
+}
+
+export default function AdminPanel({ onLock, onBackToKiosk }) {
+  const [employees, setEmployees] = useState([])
+  const [showInactive, setShowInactive] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [newEmployeeName, setNewEmployeeName] = useState('')
+  const [importStatus, setImportStatus] = useState('')
+  const [exportStartDate, setExportStartDate] = useState('')
+  const [exportEndDate, setExportEndDate] = useState('')
+  const [renameEmployee, setRenameEmployee] = useState(null)
+  const [newName, setNewName] = useState('')
+
+  useEffect(() => {
+    loadEmployees()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showInactive])
+
+  const loadEmployees = async () => {
+    try {
+      let query = supabase
+        .from('employees')
+        .select('*')
+        .eq('org_id', import.meta.env.VITE_ORG_ID)
+        .order('name')
+
+      if (!showInactive) {
+        query = query.eq('active', true).is('deleted_at', null)
+      }
+
+      const { data, error } = await query
+
+      if (error) throw error
+      setEmployees(data || [])
+    } catch (error) {
+      console.error('Error loading employees:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleAddEmployee = async (e) => {
+    e.preventDefault()
+    const trimmedName = newEmployeeName.trim()
+
+    if (!trimmedName) {
+      alert('Please enter a name')
+      return
+    }
+
+    try {
+      const { error } = await supabase
+        .from('employees')
+        .insert({
+          org_id: import.meta.env.VITE_ORG_ID,
+          name: trimmedName,
+          active: true
+        })
+
+      if (error) throw error
+
+      setNewEmployeeName('')
+      loadEmployees()
+    } catch (error) {
+      console.error('Error adding employee:', error)
+      alert('Failed to add employee')
+    }
+  }
+
+  const handleRename = async (employeeId) => {
+    const trimmedName = newName.trim()
+
+    if (!trimmedName) {
+      alert('Please enter a name')
+      return
+    }
+
+    try {
+      const { error } = await supabase
+        .from('employees')
+        .update({ name: trimmedName, updated_at: new Date().toISOString() })
+        .eq('id', employeeId)
+
+      if (error) throw error
+
+      setRenameEmployee(null)
+      setNewName('')
+      loadEmployees()
+    } catch (error) {
+      console.error('Error renaming employee:', error)
+      alert('Failed to rename employee')
+    }
+  }
+
+  const handleDeactivate = async (employeeId, currentlyActive) => {
+    try {
+      const { error } = await supabase
+        .from('employees')
+        .update({ active: !currentlyActive, updated_at: new Date().toISOString() })
+        .eq('id', employeeId)
+
+      if (error) throw error
+      loadEmployees()
+    } catch (error) {
+      console.error('Error deactivating employee:', error)
+      alert('Failed to update employee status')
+    }
+  }
+
+  const handleDelete = async (employeeId) => {
+    if (!confirm('Are you sure you want to delete this employee? This will also delete all their time entries.')) {
+      return
+    }
+
+    try {
+      const { error } = await supabase
+        .from('employees')
+        .delete()
+        .eq('id', employeeId)
+
+      if (error) throw error
+      loadEmployees()
+    } catch (error) {
+      console.error('Error deleting employee:', error)
+      alert('Failed to delete employee')
+    }
+  }
+
+  const handleCSVUpload = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+
+    try {
+      const text = await file.text()
+      const lines = text.split('\n').filter(line => line.trim())
+
+      let imported = 0
+      let errors = 0
+
+      for (const line of lines.slice(1)) { // Skip header
+        const name = line.trim()
+        if (!name) continue
+
+        try {
+          const { error } = await supabase
+            .from('employees')
+            .insert({
+              org_id: import.meta.env.VITE_ORG_ID,
+              name: name,
+              active: true
+            })
+
+          if (error) {
+            errors++
+            console.error('Error importing:', name, error)
+          } else {
+            imported++
+          }
+        } catch {
+          errors++
+        }
+      }
+
+      setImportStatus(`Imported: total ${imported}, errors ${errors}`)
+      loadEmployees()
+    } catch (error) {
+      console.error('Error reading CSV:', error)
+      setImportStatus('Failed to read CSV file')
+    }
+
+    e.target.value = ''
+  }
+
+  const handleExportExcel = async () => {
+    if (!exportStartDate || !exportEndDate) {
+      alert('Please select start and end dates')
+      return
+    }
+
+    try {
+      // Load ExcelJS on demand so the kiosk itself stays fast
+      const ExcelJSModule = await import('exceljs')
+      const ExcelJS = ExcelJSModule.default ?? ExcelJSModule
+
+      // 1) Get all active employees (sorted alphabetically)
+      const { data: activeEmployees, error: empError } = await supabase
+        .from('employees')
+        .select('*')
+        .eq('org_id', import.meta.env.VITE_ORG_ID)
+        .eq('active', true)
+        .is('deleted_at', null)
+        .order('name')
+        .limit(10000) // Ensure we get all employees
+
+      if (empError) throw empError
+
+      // 2) Build the full date range (so headers include all days even if blank)
+      const allDates = buildDateRangeDDMMYYYY(exportStartDate, exportEndDate)
+
+      // 3) Fetch daily comments in one go (map by employee + work_date)
+      const employeeIds = activeEmployees.map(e => e.id)
+
+      const { data: commentsData, error: commentsError } = await supabase
+        .from('daily_comments')
+        .select('employee_id, work_date, comment')
+        .in('employee_id', employeeIds)
+        .gte('work_date', exportStartDate)
+        .lte('work_date', exportEndDate)
+        .limit(100000) // Ensure we get all comments
+
+      if (commentsError) throw commentsError
+
+      // Map key: "empId|DD/MM/YYYY" -> comment
+      const commentByEmpDate = {}
+      for (const c of (commentsData || [])) {
+        const dateKey = isoToDDMMYYYY(c.work_date) // IMPORTANT: no Date() parsing here
+        commentByEmpDate[`${c.employee_id}|${dateKey}`] = (c.comment || '')
+      }
+
+      // 4) Handle date range for time_entries query
+      const startDate = new Date(exportStartDate + 'T00:00:00')
+      const endDate = new Date(exportEndDate + 'T23:59:59')
+
+      // 5) Collect clock pairs organized by employee and date
+      const employeeDataByDate = []
+
+      for (const emp of activeEmployees) {
+        // Fetch ALL entries for this employee using pagination
+        let allEntries = []
+        let from = 0
+        const pageSize = 1000
+        let hasMore = true
+
+        while (hasMore) {
+          const { data: entries, error: entriesError } = await supabase
+            .from('time_entries')
+            .select('*')
+            .eq('employee_id', emp.id)
+            .gte('created_at', startDate.toISOString())
+            .lte('created_at', endDate.toISOString())
+            .order('created_at')
+            .range(from, from + pageSize - 1)
+
+          if (entriesError) throw entriesError
+
+          if (entries && entries.length > 0) {
+            allEntries = [...allEntries, ...entries]
+            from += pageSize
+            hasMore = entries.length === pageSize
+          } else {
+            hasMore = false
+          }
+        }
+
+        const entries = allEntries
+
+        const pairsByDate = {}
+
+        // Group pairs by date - robust logic handles any clocking pattern
+        for (let i = 0; i < entries.length; i++) {
+          const entry = entries[i]
+
+          if (entry.direction === 'in') {
+            const date = new Date(entry.created_at)
+            const dateKey = date.toLocaleDateString('en-AU', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+              timeZone: 'Australia/Sydney'
+            })
+
+            if (!pairsByDate[dateKey]) pairsByDate[dateKey] = []
+
+            const startStr = formatTimeHHMM(entry.created_at)
+
+            // Find the next OUT entry (if any)
+            let finishStr = ''
+            for (let j = i + 1; j < entries.length; j++) {
+              if (entries[j].direction === 'out') {
+                finishStr = formatTimeHHMM(entries[j].created_at)
+                break
+              }
+            }
+
+            pairsByDate[dateKey].push([startStr, finishStr])
+          }
+        }
+
+        employeeDataByDate.push({ id: emp.id, name: emp.name, pairsByDate })
+      }
+
+      // 6) Find max pairs for each date across all employees (minimum 2 columns per day)
+      const maxPairsByDate = {}
+      allDates.forEach(date => {
+        maxPairsByDate[date] = Math.max(
+          ...employeeDataByDate.map(emp => (emp.pairsByDate[date] || []).length),
+          2  // Minimum of 2 In/Out column pairs per day
+        )
+      })
+
+      // 7) Build headers (no comment columns - comments become cell notes)
+      const dateHeader = ['employee_name']
+      const subHeader = ['']
+
+      allDates.forEach(date => {
+        const pairCount = maxPairsByDate[date]
+        for (let i = 0; i < pairCount; i++) {
+          dateHeader.push(date, '')
+          subHeader.push('In', 'Out')
+        }
+      })
+
+      // 8) Build the workbook
+      const wb = new ExcelJS.Workbook()
+      const ws = wb.addWorksheet('Bundy Export')
+
+      ws.addRow(dateHeader)
+      ws.addRow(subHeader)
+      ws.getRow(1).font = { bold: true }
+      ws.getRow(2).font = { bold: true }
+
+      employeeDataByDate.forEach(emp => {
+        const rowValues = [emp.name]
+        const noteTargets = [] // { col, text }
+        let col = 2 // column B is the first In cell
+
+        allDates.forEach(date => {
+          const pairs = emp.pairsByDate[date] || []
+          const maxForDate = maxPairsByDate[date]
+          const firstInCol = col
+
+          pairs.forEach(pair => {
+            rowValues.push(timeCellValue(pair[0]), timeCellValue(pair[1]))
+            col += 2
+          })
+
+          const remaining = maxForDate - pairs.length
+          for (let i = 0; i < remaining; i++) {
+            rowValues.push(null, null)
+            col += 2
+          }
+
+          const comment = commentByEmpDate[`${emp.id}|${date}`]
+          if (comment) noteTargets.push({ col: firstInCol, text: comment })
+        })
+
+        const row = ws.addRow(rowValues)
+
+        // 0000 format keeps leading zeros (852 displays as 0852) with no green flags
+        for (let c = 2; c <= rowValues.length; c++) {
+          row.getCell(c).numFmt = '0000'
+        }
+
+        // Attach each day's comment as a note on the first In cell of that day
+        noteTargets.forEach(({ col: noteCol, text }) => {
+          const cell = row.getCell(noteCol)
+          cell.note = {
+            texts: [
+              { font: { bold: true, size: 9 }, text: `${emp.name}:\n` },
+              { font: { size: 9 }, text }
+            ]
+          }
+          // Light yellow fill so commented cells stand out
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFFFF2B2' }
+          }
+        })
+      })
+
+      // Highlight any 2300 (11pm auto clock-out) in red
+      const colLetter = (n) => {
+        let s = ''
+        while (n > 0) {
+          const m = (n - 1) % 26
+          s = String.fromCharCode(65 + m) + s
+          n = Math.floor((n - 1) / 26)
+        }
+        return s
+      }
+      if (employeeDataByDate.length > 0 && dateHeader.length > 1) {
+        const lastRow = employeeDataByDate.length + 2
+        ws.addConditionalFormatting({
+          ref: `B3:${colLetter(dateHeader.length)}${lastRow}`,
+          rules: [
+            {
+              type: 'cellIs',
+              operator: 'equal',
+              formulae: ['2300'],
+              priority: 1,
+              style: {
+                fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFFFC7CE' } },
+                font: { color: { argb: 'FF9C0006' } }
+              }
+            }
+          ]
+        })
+      }
+
+      // Freeze the name column and header rows, set sensible widths
+      ws.views = [{ state: 'frozen', xSplit: 1, ySplit: 2 }]
+      ws.getColumn(1).width = 18
+      for (let c = 2; c <= dateHeader.length; c++) {
+        ws.getColumn(c).width = 8
+      }
+
+      // 9) Download as .xlsx
+      const buffer = await wb.xlsx.writeBuffer()
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `bundy-export-${exportStartDate}-to-${exportEndDate}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Error exporting Excel:', error)
+      alert('Failed to export Excel')
+    }
+  }
+
+  const downloadTemplate = () => {
+    const csv = 'name\nJohn Smith\nJane Doe'
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'employee-import-template.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  if (loading) {
+    return <div className="h-full flex items-center justify-center">Loading...</div>
+  }
+
+  return (
+    <div className="h-full bg-gray-50 overflow-auto">
+      <div className="sticky top-0 bg-white shadow-sm z-10">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-gray-900">Admin Panel</h1>
+          <div className="flex gap-3">
+            <button
+              onClick={onBackToKiosk}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Back to Kiosk
+            </button>
+            <button
+              onClick={onLock}
+              className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+            >
+              Lock Admin
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        {/* Controls */}
+        <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+          <div className="flex items-center justify-between mb-6">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={showInactive}
+                onChange={(e) => setShowInactive(e.target.checked)}
+                className="w-5 h-5"
+              />
+              <span className="text-sm font-medium">Show inactive / deleted</span>
+            </label>
+            <button
+              onClick={loadEmployees}
+              className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200"
+            >
+              Refresh
+            </button>
+          </div>
+
+          {/* Add Employee */}
+          <form onSubmit={handleAddEmployee} className="flex gap-3 mb-6">
+            <input
+              type="text"
+              value={newEmployeeName}
+              onChange={(e) => setNewEmployeeName(e.target.value)}
+              placeholder="New employee name"
+              className="flex-1 px-4 py-2 border rounded-lg"
+            />
+            <button
+              type="submit"
+              className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+            >
+              Add Person
+            </button>
+          </form>
+
+          {/* CSV Import */}
+          <div className="flex items-center gap-3 mb-4">
+            <input
+              type="file"
+              accept=".csv"
+              onChange={handleCSVUpload}
+              className="text-sm"
+            />
+            <button
+              onClick={downloadTemplate}
+              className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 text-sm"
+            >
+              Download Template
+            </button>
+          </div>
+          {importStatus && (
+            <p className="text-sm text-gray-600 mb-4">{importStatus}</p>
+          )}
+
+          {/* Excel Export */}
+          <div className="border-t pt-4">
+            <h3 className="font-semibold mb-3">Export Report</h3>
+            <div className="flex items-center gap-3">
+              <input
+                type="date"
+                value={exportStartDate}
+                onChange={(e) => setExportStartDate(e.target.value)}
+                className="px-4 py-2 border rounded-lg"
+              />
+              <span>to</span>
+              <input
+                type="date"
+                value={exportEndDate}
+                onChange={(e) => setExportEndDate(e.target.value)}
+                className="px-4 py-2 border rounded-lg"
+              />
+              <button
+                onClick={handleExportExcel}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Export Excel
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Employee List */}
+        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Name</th>
+                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Status</th>
+                <th className="px-6 py-3 text-right text-sm font-semibold text-gray-900">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {employees.map((emp) => (
+                <tr key={emp.id}>
+                  <td className="px-6 py-4">
+                    <div className="font-medium text-gray-900">{emp.name}</div>
+                    <div className="text-xs text-gray-500">ID: {emp.id.substring(0, 8)}</div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`inline-block px-3 py-1 rounded-full text-sm ${
+                      emp.active
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-gray-100 text-gray-700'
+                    }`}>
+                      {emp.active ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => {
+                          setRenameEmployee(emp.id)
+                          setNewName(emp.name)
+                        }}
+                        className="px-3 py-1 border rounded-lg hover:bg-gray-50 text-sm"
+                      >
+                        Rename
+                      </button>
+                      <button
+                        onClick={() => handleDeactivate(emp.id, emp.active)}
+                        className="px-3 py-1 border rounded-lg hover:bg-gray-50 text-sm"
+                      >
+                        {emp.active ? 'Deactivate' : 'Activate'}
+                      </button>
+                      <button
+                        onClick={() => handleDelete(emp.id)}
+                        className="px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {employees.length === 0 && (
+            <div className="text-center py-12 text-gray-500">
+              No employees to display
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Rename Modal */}
+      {renameEmployee && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold mb-4">Rename Employee</h3>
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              className="w-full px-4 py-2 border rounded-lg mb-4"
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setRenameEmployee(null)
+                  setNewName('')
+                }}
+                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleRename(renameEmployee)}
+                className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
