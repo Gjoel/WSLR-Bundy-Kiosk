@@ -29,6 +29,10 @@ const formatTimeHHMM = (iso) => {
   return `${hh}${mm}` // 0809 style
 }
 
+// Convert '0809' style time string to a real number (or null for blank cells)
+// so Excel doesn't flag 'number stored as text'
+const timeCellValue = (t) => (t === '' ? null : parseInt(t, 10))
+
 const buildDateRangeDDMMYYYY = (startISO, endISO) => {
   // startISO/endISO from <input type="date"> => "YYYY-MM-DD"
   const start = new Date(startISO + 'T00:00:00')
@@ -196,7 +200,7 @@ export default function AdminPanel({ onLock, onBackToKiosk }) {
           } else {
             imported++
           }
-        } catch (err) {
+        } catch {
           errors++
         }
       }
@@ -211,13 +215,17 @@ export default function AdminPanel({ onLock, onBackToKiosk }) {
     e.target.value = ''
   }
 
-  const handleExportCSV = async () => {
+  const handleExportExcel = async () => {
     if (!exportStartDate || !exportEndDate) {
       alert('Please select start and end dates')
       return
     }
 
     try {
+      // Load ExcelJS on demand so the kiosk itself stays fast
+      const ExcelJSModule = await import('exceljs')
+      const ExcelJS = ExcelJSModule.default ?? ExcelJSModule
+
       // 1) Get all active employees (sorted alphabetically)
       const { data: activeEmployees, error: empError } = await supabase
         .from('employees')
@@ -295,7 +303,7 @@ export default function AdminPanel({ onLock, onBackToKiosk }) {
         // Group pairs by date - robust logic handles any clocking pattern
         for (let i = 0; i < entries.length; i++) {
           const entry = entries[i]
-          
+
           if (entry.direction === 'in') {
             const date = new Date(entry.created_at)
             const dateKey = date.toLocaleDateString('en-AU', {
@@ -334,11 +342,10 @@ export default function AdminPanel({ onLock, onBackToKiosk }) {
         )
       })
 
-      // 7) Build headers
+      // 7) Build headers (no comment columns - comments become cell notes)
       const dateHeader = ['employee_name']
       const subHeader = ['']
 
-      // In/Out section
       allDates.forEach(date => {
         const pairCount = maxPairsByDate[date]
         for (let i = 0; i < pairCount; i++) {
@@ -347,64 +354,115 @@ export default function AdminPanel({ onLock, onBackToKiosk }) {
         }
       })
 
-      // Comment section (far right): one per date
-      allDates.forEach(date => {
-        dateHeader.push(date)
-        subHeader.push('Comment')
-      })
+      // 8) Build the workbook
+      const wb = new ExcelJS.Workbook()
+      const ws = wb.addWorksheet('Bundy Export')
 
-      // 8) Build data rows
-      const csvData = employeeDataByDate.map(emp => {
-        const row = [emp.name]
+      ws.addRow(dateHeader)
+      ws.addRow(subHeader)
+      ws.getRow(1).font = { bold: true }
+      ws.getRow(2).font = { bold: true }
 
-        // In/Out section
+      employeeDataByDate.forEach(emp => {
+        const rowValues = [emp.name]
+        const noteTargets = [] // { col, text }
+        let col = 2 // column B is the first In cell
+
         allDates.forEach(date => {
           const pairs = emp.pairsByDate[date] || []
           const maxForDate = maxPairsByDate[date]
+          const firstInCol = col
 
           pairs.forEach(pair => {
-            row.push(...pair)
+            rowValues.push(timeCellValue(pair[0]), timeCellValue(pair[1]))
+            col += 2
           })
 
           const remaining = maxForDate - pairs.length
           for (let i = 0; i < remaining; i++) {
-            row.push('', '')
+            rowValues.push(null, null)
+            col += 2
+          }
+
+          const comment = commentByEmpDate[`${emp.id}|${date}`]
+          if (comment) noteTargets.push({ col: firstInCol, text: comment })
+        })
+
+        const row = ws.addRow(rowValues)
+
+        // 0000 format keeps leading zeros (852 displays as 0852) with no green flags
+        for (let c = 2; c <= rowValues.length; c++) {
+          row.getCell(c).numFmt = '0000'
+        }
+
+        // Attach each day's comment as a note on the first In cell of that day
+        noteTargets.forEach(({ col: noteCol, text }) => {
+          const cell = row.getCell(noteCol)
+          cell.note = {
+            texts: [
+              { font: { bold: true, size: 9 }, text: `${emp.name}:\n` },
+              { font: { size: 9 }, text }
+            ]
+          }
+          // Light yellow fill so commented cells stand out
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFFFF2B2' }
           }
         })
-
-        // Comment section (far right)
-        allDates.forEach(date => {
-          const key = `${emp.id}|${date}`
-          row.push(commentByEmpDate[key] || '')
-        })
-
-        return row
       })
 
-      // 9) Generate CSV (escape commas/quotes/newlines so comments don't break CSV)
-      const escapeCSV = (value) => {
-        const s = String(value ?? '')
-        if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+      // Highlight any 2300 (11pm auto clock-out) in red
+      const colLetter = (n) => {
+        let s = ''
+        while (n > 0) {
+          const m = (n - 1) % 26
+          s = String.fromCharCode(65 + m) + s
+          n = Math.floor((n - 1) / 26)
+        }
         return s
       }
+      if (employeeDataByDate.length > 0 && dateHeader.length > 1) {
+        const lastRow = employeeDataByDate.length + 2
+        ws.addConditionalFormatting({
+          ref: `B3:${colLetter(dateHeader.length)}${lastRow}`,
+          rules: [
+            {
+              type: 'cellIs',
+              operator: 'equal',
+              formulae: ['2300'],
+              priority: 1,
+              style: {
+                fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFFFC7CE' } },
+                font: { color: { argb: 'FF9C0006' } }
+              }
+            }
+          ]
+        })
+      }
 
-      const csv = [
-        dateHeader.map(escapeCSV).join(','),
-        subHeader.map(escapeCSV).join(','),
-        ...csvData.map(row => row.map(escapeCSV).join(','))
-      ].join('\n')
+      // Freeze the name column and header rows, set sensible widths
+      ws.views = [{ state: 'frozen', xSplit: 1, ySplit: 2 }]
+      ws.getColumn(1).width = 18
+      for (let c = 2; c <= dateHeader.length; c++) {
+        ws.getColumn(c).width = 8
+      }
 
-      // 10) Download
-      const blob = new Blob([csv], { type: 'text/csv' })
+      // 9) Download as .xlsx
+      const buffer = await wb.xlsx.writeBuffer()
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `bundy-export-${exportStartDate}-to-${exportEndDate}.csv`
+      a.download = `bundy-export-${exportStartDate}-to-${exportEndDate}.xlsx`
       a.click()
       URL.revokeObjectURL(url)
     } catch (error) {
-      console.error('Error exporting CSV:', error)
-      alert('Failed to export CSV')
+      console.error('Error exporting Excel:', error)
+      alert('Failed to export Excel')
     }
   }
 
@@ -502,7 +560,7 @@ export default function AdminPanel({ onLock, onBackToKiosk }) {
             <p className="text-sm text-gray-600 mb-4">{importStatus}</p>
           )}
 
-          {/* CSV Export */}
+          {/* Excel Export */}
           <div className="border-t pt-4">
             <h3 className="font-semibold mb-3">Export Report</h3>
             <div className="flex items-center gap-3">
@@ -520,10 +578,10 @@ export default function AdminPanel({ onLock, onBackToKiosk }) {
                 className="px-4 py-2 border rounded-lg"
               />
               <button
-                onClick={handleExportCSV}
+                onClick={handleExportExcel}
                 className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
-                Export CSV
+                Export Excel
               </button>
             </div>
           </div>
